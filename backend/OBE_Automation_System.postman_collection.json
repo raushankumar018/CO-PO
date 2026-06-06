@@ -1,0 +1,366 @@
+{
+  "info": {
+    "_postman_id": "8c6b48fb-ea17-48f8-8a8b-4a5568abcdef",
+    "name": "OBE Automation System Backend",
+    "description": "Standardized Postman Collection for outcome-based education automation system APIs including syllabus processing, CO/PO mappings, and weightage distribution reports.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "General",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Syllabus Processing",
+      "item": [
+        {
+          "name": "Upload Syllabus PDF",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "syllabus",
+                  "type": "file",
+                  "src": [],
+                  "description": "Upload syllabus PDF document"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/syllabus/upload",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "syllabus",
+                "upload"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Processed Subjects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/syllabus",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "syllabus"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Subject by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/syllabus/REPLACE_WITH_SUBJECT_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "syllabus",
+                "REPLACE_WITH_SUBJECT_ID"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Course Outcomes (CO)",
+      "item": [
+        {
+          "name": "Auto-Generate 6 COs",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subjectId\": \"REPLACE_WITH_SUBJECT_ID\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/co/generate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "co",
+                "generate"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Subject Outcomes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/co/REPLACE_WITH_SUBJECT_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "co",
+                "REPLACE_WITH_SUBJECT_ID"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Audit, Verify & Save COs",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subjectId\": \"REPLACE_WITH_SUBJECT_ID\",\n  \"CO1\": \"Explain and utilize fundamental algorithmic paradigms.\",\n  \"CO2\": \"Formulate solutions using recurrence relations and divide-and-conquer strategy.\",\n  \"CO3\": \"Design network flows and graph traversals for system models.\",\n  \"CO4\": \"Apply dynamic programming and greedy choices to optimization issues.\",\n  \"CO5\": \"Evaluate computational complexity of P and NP classes.\",\n  \"CO6\": \"Implement backtracking algorithms for constraint satisfaction applications.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/co/verify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "co",
+                "verify"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Direct Update CO Record",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CO1\": \"Apply asymptotic notations to evaluate algorithms.\",\n  \"CO2\": \"Design efficient divide-and-conquer procedures.\",\n  \"CO3\": \"Formulate greedy strategies for scheduling.\",\n  \"CO4\": \"Apply traversals in networks.\",\n  \"CO5\": \"Use backtracking search algorithms.\",\n  \"CO6\": \"Differentiate P and NP classes.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/co/REPLACE_WITH_CO_RECORD_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "co",
+                "REPLACE_WITH_CO_RECORD_ID"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Question Paper Processing",
+      "item": [
+        {
+          "name": "Upload Question Paper PDF",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "subjectId",
+                  "value": "REPLACE_WITH_SUBJECT_ID",
+                  "type": "text"
+                },
+                {
+                  "key": "questionPaper",
+                  "type": "file",
+                  "src": [],
+                  "description": "Upload exam question paper PDF"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/question-papers/upload",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "question-papers",
+                "upload"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Extracted Question Paper Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/question-papers/REPLACE_WITH_SUBJECT_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "question-papers",
+                "REPLACE_WITH_SUBJECT_ID"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Mapping & Weightage Analysis",
+      "item": [
+        {
+          "name": "Map Question Paper & Create Weightages",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subjectId\": \"REPLACE_WITH_SUBJECT_ID\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/mappings/map",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "mappings",
+                "map"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Mappings & CO Weightage Table",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mappings/REPLACE_WITH_SUBJECT_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "mappings",
+                "REPLACE_WITH_SUBJECT_ID"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get CO-PO Matrix",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mappings/co-po/REPLACE_WITH_SUBJECT_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "mappings",
+                "co-po",
+                "REPLACE_WITH_SUBJECT_ID"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000",
+      "type": "string"
+    }
+  ]
+}
