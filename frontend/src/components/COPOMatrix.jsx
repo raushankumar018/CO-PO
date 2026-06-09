@@ -12,7 +12,9 @@ const PO_DESCRIPTIONS = [
   { code: 'PO9', title: 'Individual & Team Work', desc: 'Function effectively as an individual or member of diverse/multidisciplinary teams.' },
   { code: 'PO10', title: 'Communication', desc: 'Communicate clearly, write reports, and deliver effective technical presentations.' },
   { code: 'PO11', title: 'Project Management', desc: 'Apply financial/management principles to organize projects.' },
-  { code: 'PO12', title: 'Life-long Learning', desc: 'Recognize the need for, and engage in, independent learning in technology changes.' }
+  { code: 'PO12', title: 'Life-long Learning', desc: 'Recognize the need for, and engage in, independent learning in technology changes.' },
+  { code: 'PSO1', title: 'Software Engineering Methodologies', desc: 'Design and develop industrial-grade software applications using standard paradigms.' },
+  { code: 'PSO2', title: 'System Design & Technical Operations', desc: 'Establish and administer modern networking structures, databases, and secure system architectures.' }
 ];
 
 export default function COPOMatrix({ activeSubject }) {

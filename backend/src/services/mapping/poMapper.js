@@ -5,6 +5,7 @@
 
 import ollamaConfig from '../../config/ollama.js';
 import { poMappingSystemPrompt, poMappingUserPrompt } from '../../prompts/poMapping.prompt.js';
+import { cleanAndParseJSON } from '../../utils/jsonParser.js';
 
 /**
  * Maps Course Outcomes to the 12 Program Outcomes with correlation weights.
@@ -30,16 +31,10 @@ export const mapCOsToPOs = async (courseOutcomes) => {
     let result;
 
     try {
-      result = JSON.parse(responseText);
+      result = cleanAndParseJSON(responseText);
     } catch (parseError) {
-      console.error('[poMapper] JSON parsing failed, attempting cleanup:', responseText);
-      const jsonRegex = /{[^]*}/;
-      const match = responseText.match(jsonRegex);
-      if (match) {
-        result = JSON.parse(match[0]);
-      } else {
-        throw new Error('Ollama response could not be parsed as valid JSON.');
-      }
+      console.error('[poMapper] JSON self-healing parsing failed:', responseText);
+      throw new Error(`Ollama response could not be parsed as valid JSON: ${parseError.message}`);
     }
 
     const rawMatrix = result.coPoMatrix || [];

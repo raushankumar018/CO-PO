@@ -61,7 +61,7 @@ export const generateCOs = async (subjectName, unitsAndTopics, subjectCode) => {
       stream: false,
       format: 'json',
       options: {
-        temperature: 0.3 // Lower temperature for high alignment with rules
+        temperature: 0.4 // Lower temperature for high alignment with rules
       }
     });
 
@@ -91,17 +91,27 @@ export const generateCOs = async (subjectName, unitsAndTopics, subjectCode) => {
       CO6: parsedCOs.CO6 || 'Demonstrate practical system operations or project work.'
     };
 
-    // 7. Validate generated outcomes
+    // 7. Self-healing loop: Refine outcomes until they pass validation (compliance score >= 90%)
     console.log('[coGenerator] Auditing and validating generated outcomes...');
-    const validationReport = await validateCOs(subjectName, unitsAndTopics, finalCOs, subjectCode);
+    let validationReport = await validateCOs(subjectName, unitsAndTopics, finalCOs, subjectCode);
     
-    // If validation fails compliance checks or finds weak verbs, trigger the refiner
-    if (!validationReport.isCompliant) {
-      console.log(`[coGenerator] Validation check failed (Score: ${validationReport.score.bloomCompliance}% Bloom compliance). Triggering post-refinement...`);
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while (!validationReport.isCompliant && attempts < maxAttempts) {
+      attempts++;
+      console.log(`[coGenerator] Validation check failed on attempt ${attempts} (Bloom Compliance: ${validationReport.score.bloomCompliance}%, Coverage: ${validationReport.score.coverage}%). Triggering refinement loop...`);
+      
       finalCOs = await refineCOs(subjectName, unitsAndTopicsText, finalCOs, validationReport.comments.join('; '));
-      console.log('[coGenerator] Outcomes refined successfully.');
+      console.log(`[coGenerator] Outcomes refined. Re-auditing outcomes...`);
+      
+      validationReport = await validateCOs(subjectName, unitsAndTopics, finalCOs, subjectCode);
+    }
+    
+    if (validationReport.isCompliant) {
+      console.log(`[coGenerator] Outcomes successfully passed compliance validation (Score: ${validationReport.score.bloomCompliance}% Bloom compliance).`);
     } else {
-      console.log('[coGenerator] Outcomes passed compliance validation.');
+      console.log(`[coGenerator] Validation check did not reach compliance threshold after ${maxAttempts} attempts. Proceeding with best-effort outcomes.`);
     }
 
     return finalCOs;

@@ -5,6 +5,7 @@
 
 import ollamaConfig from '../../config/ollama.js';
 import { coMappingSystemPrompt, coMappingUserPrompt } from '../../prompts/coMapping.prompt.js';
+import { cleanAndParseJSON } from '../../utils/jsonParser.js';
 
 /**
  * Maps question objects to relevant Course Outcomes.
@@ -35,16 +36,10 @@ export const mapQuestionsToCOs = async (courseOutcomes, questions) => {
     let result;
 
     try {
-      result = JSON.parse(responseText);
+      result = cleanAndParseJSON(responseText);
     } catch (parseError) {
-      console.error('[coMapper] JSON parsing failed, attempting cleanup:', responseText);
-      const jsonRegex = /{[^]*}/;
-      const match = responseText.match(jsonRegex);
-      if (match) {
-        result = JSON.parse(match[0]);
-      } else {
-        throw new Error('Ollama response could not be parsed as valid JSON.');
-      }
+      console.error('[coMapper] JSON self-healing parsing failed:', responseText);
+      throw new Error(`Ollama response could not be parsed as valid JSON: ${parseError.message}`);
     }
 
     return result.mappings || [];
