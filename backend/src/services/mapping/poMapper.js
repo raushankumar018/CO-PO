@@ -42,7 +42,18 @@ export const mapCOsToPOs = async (courseOutcomes) => {
       }
     }
 
-    return result.coPoMatrix || [];
+    const rawMatrix = result.coPoMatrix || [];
+    
+    // Translate LLM schema key names (co, po) to Mongoose model fields (coCode, poCode)
+    const translatedMatrix = rawMatrix.map((row) => ({
+      coCode: row.coCode || row.co || '',
+      mappings: (row.mappings || []).map((m) => ({
+        poCode: m.poCode || m.po || '',
+        correlation: Number(m.correlation) || 0
+      }))
+    }));
+
+    return translatedMatrix;
   } catch (error) {
     console.error(`[poMapper] Error mapping COs to POs: ${error.message}`);
     throw new Error(`CO-PO mapping failed: ${error.message}`);

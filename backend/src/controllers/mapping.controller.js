@@ -5,6 +5,7 @@
 
 import COMapping from '../models/COMapping.js';
 import CourseOutcome from '../models/CourseOutcome.js';
+import COPOMapping from '../models/COPOMapping.js';
 import QuestionPaper from '../models/QuestionPaper.js';
 import { mapQuestionsToCOs } from '../services/mapping/coMapper.js';
 import { mapCOsToPOs } from '../services/mapping/poMapper.js';
@@ -103,21 +104,74 @@ export const getCOMapping = async (req, res, next) => {
 export const generateCOToPOMatrix = async (req, res, next) => {
   try {
     const { subjectId } = req.params;
+
     const coRecord = await CourseOutcome.findOne({ subjectId });
 
     if (!coRecord) {
-      return sendError(res, 'Course Outcomes must exist to generate CO-PO matrix.', 404);
+      return sendError(
+        res,
+        'Course Outcomes must exist to generate CO-PO matrix.',
+        404
+      );
     }
 
-    // Call service to map COs to POs
+    // Generate matrix using LLM
     const coPoMatrix = await mapCOsToPOs(coRecord);
 
-    return sendSuccess(res, 'CO-PO matrix generated successfully.', {
-      subjectId,
-      coPoMatrix
-    });
+    // Save or Update matrix in MongoDB
+    const savedMatrix = await COPOMapping.findOneAndUpdate(
+      { subjectId },
+      {
+        subjectId,
+        matrix: coPoMatrix
+      },
+      {
+        upsert: true,
+        new: true
+      }
+    );
+
+    return sendSuccess(
+      res,
+      'CO-PO matrix generated and saved successfully.',
+      {
+        subjectId,
+        coPoMatrix: savedMatrix
+      }
+    );
   } catch (error) {
-    console.error('[mappingController] Error generating CO-PO matrix:', error);
+    console.error(
+      '[mappingController] Error generating CO-PO matrix:',
+      error
+    );
+    next(error);
+  }
+};
+
+
+
+export const getCOPOMatrix = async (req, res, next) => {
+  try {
+    const { subjectId } = req.params;
+
+    const matrix = await COPOMapping.findOne({
+      subjectId
+    });
+
+    if (!matrix) {
+      return sendError(
+        res,
+        'CO-PO matrix not found.',
+        404
+      );
+    }
+
+    return sendSuccess(
+      res,
+      'CO-PO matrix retrieved successfully.',
+      matrix
+    );
+  } catch (error) {
     next(error);
   }
 };

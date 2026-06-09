@@ -7,7 +7,8 @@ import express from 'express';
 import {
   mapQuestionPaperToCOs,
   getCOMapping,
-  generateCOToPOMatrix
+  generateCOToPOMatrix,
+  getCOPOMatrix
 } from '../controllers/mapping.controller.js';
 
 const router = express.Router();
@@ -32,5 +33,12 @@ router.get('/:subjectId', getCOMapping);
  * @access  Public
  */
 router.get('/co-po/:subjectId', generateCOToPOMatrix);
+
+/**
+ * @route   GET /api/v1/mappings/co-po/:subjectId
+ * @desc    Retrieve the CO-PO matrix for a subject.
+ * @access  Public
+ */
+router.get('/co-po/retrieve/:subjectId', getCOPOMatrix);
 
 export default router;

@@ -41,7 +41,8 @@ Schema:
 }`;
 
 export const poMappingUserPrompt = (courseOutcomes) => {
-  const cosFormatted = Object.entries(courseOutcomes)
+  const rawCOs = courseOutcomes.toObject ? courseOutcomes.toObject() : courseOutcomes;
+  const cosFormatted = Object.entries(rawCOs)
     .filter(([key]) => ['CO1', 'CO2', 'CO3', 'CO4', 'CO5', 'CO6'].includes(key))
     .map(([key, val]) => `${key}: ${val}`)
     .join('\n');
