@@ -222,3 +222,90 @@ export const getQuestionPaperBySubject = async (req, res, next) => {
     next(error);
   }
 };
+
+export const updateQuestionMappings = async (req, res, next) => {
+  try {
+    const { questionPaperId } = req.params;
+    const { mappings } = req.body; // Array of { questionNo, mappedCOs, justification }
+
+    if (!mappings || !Array.isArray(mappings)) {
+      return sendError(res, 'Mappings array is required.', 400);
+    }
+
+    const paper = await QuestionPaper.findById(questionPaperId);
+    if (!paper) {
+      return sendError(res, 'Question paper not found.', 404);
+    }
+
+    const subjectId = paper.subjectId;
+
+    for (const item of mappings) {
+      const { questionNo, mappedCOs, justification } = item;
+      
+      const qDoc = await Question.findOne({ questionPaperId, questionNo });
+      if (!qDoc) {
+        console.warn(`Question ${questionNo} not found for paper ${questionPaperId}`);
+        continue;
+      }
+
+      // Filter out zero weightages and format mapping records
+      const filteredCOs = (mappedCOs || [])
+        .filter((m) => ['CO1', 'CO2', 'CO3', 'CO4', 'CO5', 'CO6'].includes(m.coCode) && [2, 3].includes(Number(m.weightage)))
+        .map((m) => ({
+          coCode: m.coCode,
+          weightage: Number(m.weightage)
+        }));
+
+      await QuestionMapping.findOneAndUpdate(
+        { questionPaperId, questionNo },
+        {
+          questionId: qDoc._id,
+          questionPaperId,
+          questionNo,
+          mappedCOs: filteredCOs,
+          justification: justification || 'Manually updated mapping.'
+        },
+        { upsert: true, new: true }
+      );
+    }
+
+    // Load all questions and updated mappings to recompile the report
+    const allQuestions = await Question.find({ questionPaperId });
+    allQuestions.sort((a, b) => a.questionNo.localeCompare(b.questionNo, undefined, { numeric: true, sensitivity: 'base' }));
+
+    const allMappings = await QuestionMapping.find({ questionPaperId });
+
+    const compiled = compileWeightageMatrix(allQuestions, allMappings);
+
+    // Save or update weightage report
+    const existingReport = await WeightageReport.findOne({ questionPaperId });
+    const toolType = existingReport ? existingReport.toolType : 'T1';
+
+    const reportDoc = await WeightageReport.findOneAndUpdate(
+      { questionPaperId },
+      {
+        subjectId,
+        questionPaperId,
+        toolType,
+        matrix: compiled.matrix,
+        coTotals: compiled.coTotals
+      },
+      { upsert: true, new: true }
+    );
+
+    return sendSuccess(res, 'Question mappings and weightage matrix updated successfully.', {
+      questions: allQuestions.map((q) => {
+        const mapping = allMappings.find((m) => m.questionNo.toString().trim() === q.questionNo.toString().trim());
+        return {
+          ...q.toObject(),
+          mappedCOs: mapping ? mapping.mappedCOs : [],
+          justification: mapping ? mapping.justification : 'No mapping recorded.',
+        };
+      }),
+      report: reportDoc
+    });
+  } catch (error) {
+    console.error('[questionPaperController] Error updating question mappings:', error);
+    next(error);
+  }
+};

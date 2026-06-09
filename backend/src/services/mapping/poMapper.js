@@ -8,22 +8,22 @@ import { poMappingSystemPrompt, poMappingUserPrompt } from '../../prompts/poMapp
 import { cleanAndParseJSON } from '../../utils/jsonParser.js';
 
 /**
- * Maps Course Outcomes to the 12 Program Outcomes with correlation weights.
+ * Maps Course Outcomes to the 12 Program Outcomes and 2 PSOs with correlation weights.
  * @param {Object} courseOutcomes - The Subject's CO1-CO6 outcomes.
+ * @param {Object} subject - The Subject document containing syllabus info.
  * @returns {Promise<Array>} - Correlation matrix list.
  */
-export const mapCOsToPOs = async (courseOutcomes) => {
+export const mapCOsToPOs = async (courseOutcomes, subject) => {
   try {
-    const prompt = poMappingUserPrompt(courseOutcomes);
+    const prompt = poMappingUserPrompt(courseOutcomes, subject);
 
     const response = await ollamaConfig.client.post('/api/generate', {
       model: ollamaConfig.model,
       system: poMappingSystemPrompt,
       prompt: prompt,
       stream: false,
-      format: 'json',
       options: {
-        temperature: 0.2
+        temperature: 0.3
       }
     });
 
@@ -37,16 +37,21 @@ export const mapCOsToPOs = async (courseOutcomes) => {
       throw new Error(`Ollama response could not be parsed as valid JSON: ${parseError.message}`);
     }
 
-    const rawMatrix = result.coPoMatrix || [];
+    const rawMatrix = Array.isArray(result) ? result : (result.coPoMatrix || result.matrix || []);
     
-    // Translate LLM schema key names (co, po) to Mongoose model fields (coCode, poCode)
-    const translatedMatrix = rawMatrix.map((row) => ({
-      coCode: row.coCode || row.co || '',
-      mappings: (row.mappings || []).map((m) => ({
-        poCode: m.poCode || m.po || '',
-        correlation: Number(m.correlation) || 0
-      }))
-    }));
+    // Translate LLM schema key names (co, po) to Mongoose model fields (coCode, poCode) and filter
+    const translatedMatrix = rawMatrix.map((row) => {
+      const coCode = (row.coCode || row.co || '').toUpperCase();
+      const mappings = (row.mappings || [])
+        .map((m) => {
+          const poCode = (m.poCode || m.po || '').toUpperCase();
+          const correlation = Number(m.correlation);
+          return { poCode, correlation };
+        })
+        .filter((m) => [1, 2, 3].includes(m.correlation)); // Schema requires correlation in [1, 2, 3]
+
+      return { coCode, mappings };
+    });
 
     return translatedMatrix;
   } catch (error) {

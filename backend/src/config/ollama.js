@@ -14,7 +14,7 @@ const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3:8b';
 
 const ollamaClient = axios.create({
   baseURL: OLLAMA_BASE_URL,
-  timeout: 120000, // Extension of timeout to 2 minutes as LLM parsing of whole syllabus PDFs may take longer
+  timeout: 300000, // Extension of timeout to 5 minutes to accommodate slower local Ollama generation
   headers: {
     'Content-Type': 'application/json'
   }

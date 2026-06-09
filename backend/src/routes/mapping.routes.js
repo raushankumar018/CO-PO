@@ -8,7 +8,8 @@ import {
   mapQuestionPaperToCOs,
   getCOMapping,
   generateCOToPOMatrix,
-  getCOPOMatrix
+  getCOPOMatrix,
+  updateCOToPOMatrix
 } from '../controllers/mapping.controller.js';
 
 const router = express.Router();
@@ -33,6 +34,13 @@ router.get('/:subjectId', getCOMapping);
  * @access  Public
  */
 router.get('/co-po/:subjectId', generateCOToPOMatrix);
+
+/**
+ * @route   PUT /api/v1/mappings/co-po/:subjectId
+ * @desc    Update the CO-PO matrix for a subject manually
+ * @access  Public
+ */
+router.put('/co-po/:subjectId', updateCOToPOMatrix);
 
 /**
  * @route   GET /api/v1/mappings/co-po/:subjectId

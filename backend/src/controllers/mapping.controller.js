@@ -7,6 +7,7 @@ import COMapping from '../models/COMapping.js';
 import CourseOutcome from '../models/CourseOutcome.js';
 import COPOMapping from '../models/COPOMapping.js';
 import QuestionPaper from '../models/QuestionPaper.js';
+import Subject from '../models/Subject.js';
 import { mapQuestionsToCOs } from '../services/mapping/coMapper.js';
 import { mapCOsToPOs } from '../services/mapping/poMapper.js';
 import { generateWeightageTable } from '../services/mapping/weightageGenerator.js';
@@ -116,7 +117,8 @@ export const generateCOToPOMatrix = async (req, res, next) => {
     }
 
     // Generate matrix using LLM
-    const coPoMatrix = await mapCOsToPOs(coRecord);
+    const subject = await Subject.findById(subjectId);
+    const coPoMatrix = await mapCOsToPOs(coRecord, subject);
 
     // Save or Update matrix in MongoDB
     const savedMatrix = await COPOMapping.findOneAndUpdate(
@@ -172,6 +174,41 @@ export const getCOPOMatrix = async (req, res, next) => {
       matrix
     );
   } catch (error) {
+    next(error);
+  }
+};
+
+export const updateCOToPOMatrix = async (req, res, next) => {
+  try {
+    const { subjectId } = req.params;
+    const { matrix } = req.body;
+
+    if (!matrix || !Array.isArray(matrix)) {
+      return sendError(res, 'Matrix array is required.', 400);
+    }
+
+    const savedMatrix = await COPOMapping.findOneAndUpdate(
+      { subjectId },
+      {
+        subjectId,
+        matrix
+      },
+      {
+        upsert: true,
+        new: true
+      }
+    );
+
+    return sendSuccess(
+      res,
+      'CO-PO matrix updated successfully.',
+      {
+        subjectId,
+        coPoMatrix: savedMatrix
+      }
+    );
+  } catch (error) {
+    console.error('[mappingController] Error updating CO-PO matrix:', error);
     next(error);
   }
 };

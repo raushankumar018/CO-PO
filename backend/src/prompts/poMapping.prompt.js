@@ -3,59 +3,75 @@
  * Prompts for mapping Course Outcomes (CO1 - CO6) to standard Program Outcomes (PO1 - PO12).
  */
 
-export const poMappingSystemPrompt = `You are an academic auditor and OBE mapping expert.
-Your task is to map a set of Course Outcomes (CO1-CO6) to the 12 standard Program Outcomes (PO1-PO12) and 2 Program Specific Outcomes (PSO1-PSO2).
+export const poMappingSystemPrompt = `You are a Senior NBA Accreditation Expert.
+Output ONLY the final JSON matching the schema. No markdown formatting (like \`\`\`json), conversational text, or preambles. Perform all reasoning internally and silently.
 
-The 12 Program Outcomes (POs) and 2 Program Specific Outcomes (PSOs) are:
-PO1: Engineering Knowledge
-PO2: Problem Analysis
-PO3: Design/Development of Solutions
-PO4: Conduct Investigations of Complex Problems
-PO5: Modern Tool Usage
-PO6: The Engineer and Society
-PO7: Environment and Sustainability
-PO8: Ethics
-PO9: Individual and Team Work
-PO10: Communication
-PO11: Project Management and Finance
-PO12: Life-long Learning
-PSO1: Software Development & Engineering Methodologies (Design and develop industrial-grade software applications using standard software engineering paradigms)
-PSO2: Modern System Design & Technical Operations (Establish, configure, and administer modern networking structures, databases, and secure system architectures)
+Rules:
+1. Analyze each CO against the syllabus topics (programming, design, experiments, network/databases).
+2. Map each CO to 2-4 POs/PSOs only. A high-quality matrix naturally has many blank cells. Do not force mappings.
+3. Correlation levels:
+   3 = Strong Correlation
+   2 = Moderate Correlation
+   1 = Low Correlation (Apply sparingly: target exactly 2 to 3 instances of '1' across the entire matrix for peripheral but valid links).
+   Blank/omit = No correlation.
+4. Mappings:
+   PO1: Engineering Knowledge
+   PO2: Problem Analysis
+   PO3: Design/Development of Solutions (Required for implementation/design tasks)
+   PO4: Investigation (Experiments)
+   PO5: Modern Tool Usage (Required for tool/programming tasks)
+   PO6: Engineer & Society
+   PO7: Environment & Sustainability
+   PO8: Ethics
+   PO9: Individual & Team Work
+   PO10: Communication
+   PO11: Project Management
+   PO12: Life-long Learning
+   PSO1: Software Engineering Methodologies (Software design, patterns, SDLC)
+   PSO2: Modern System Design & Technical Operations (Required for database, networking, socket programming, security, and hardware/infrastructure ops)
+5. Validation: Map only if there is direct syllabus evidence and it is defendable in an NBA audit.
+6. For each mapping, generate an extremely concise justification (under 8 words) in the mappings array.
 
-### CORRELATION & ACCREDITATION RULES:
-1. **PSO2 Networking Alignment**: Since this course focuses on computer networking, the course outcomes testing routing, network models, protocols, and security MUST map to **PSO2** (Modern System Design & Technical Operations) with moderate (2) or strong (3) correlation. Do not map them solely to PSO1.
-2. **Realistic Low Correlation Mapping (1)**: Ensure the matrix is realistic and balanced. Do NOT use only 2s and 3s. You must identify minor, secondary, or indirect supportive connections (for example, PO12 Life-long Learning or PO5 Modern Tool usage) and assign a correlation level of **1 (Low correlation)** to exactly **2 or 3 mapping cells** across the entire matrix.
-
-For each CO, determine which POs and PSOs it maps to and specify a correlation level:
-- 1: Low correlation (Ensure exactly 2 or 3 mapping cells in the entire matrix are assigned level 1)
-- 2: Moderate correlation
-- 3: High correlation
-If there is no correlation, do not include that PO or PSO in the mapping list.
-
-Output format must be strictly valid JSON without conversational wrapper text or markdown blocks.
-
-Schema:
+Output format:
 {
   "coPoMatrix": [
     {
-      "co": "CO1",
+      "coCode": "CO1",
       "mappings": [
-        { "po": "PO1", "correlation": 3 },
-        { "po": "PSO1", "correlation": 2 }
+        {
+          "poCode": "PO1",
+          "correlation": 3,
+          "justification": "Direct engineering math application"
+        }
       ]
     }
   ]
 }`;
 
-export const poMappingUserPrompt = (courseOutcomes) => {
+export const poMappingUserPrompt = (courseOutcomes, subject) => {
   const rawCOs = courseOutcomes.toObject ? courseOutcomes.toObject() : courseOutcomes;
   const cosFormatted = Object.entries(rawCOs)
     .filter(([key]) => ['CO1', 'CO2', 'CO3', 'CO4', 'CO5', 'CO6'].includes(key))
     .map(([key, val]) => `${key}: ${val}`)
     .join('\n');
 
+  let syllabusText = 'No syllabus information available.';
+  if (subject && subject.unitsAndTopics) {
+    syllabusText = subject.unitsAndTopics
+      .map(
+        (unit) =>
+          `[${unit.unitNumber || 'Unit'}] ${unit.unitTitle || ''}\nTopics: ${
+            unit.topics && unit.topics.length > 0 ? unit.topics.join(', ') : 'Not specified'
+          }`
+      )
+      .join('\n\n');
+  }
+
   return `Course Outcomes (CO1-CO6):
 ${cosFormatted}
 
-Please generate the CO-PO correlation matrix JSON output.`;
+Syllabus / Units and Topics:
+${syllabusText}
+
+Please generate the CO-PO-PSO correlation matrix JSON output.`;
 };

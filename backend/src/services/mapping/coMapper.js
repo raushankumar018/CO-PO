@@ -26,7 +26,6 @@ export const mapQuestionsToCOs = async (courseOutcomes, questions) => {
       system: coMappingSystemPrompt,
       prompt: prompt,
       stream: false,
-      format: 'json',
       options: {
         temperature: 0.1 // High precision for strict classification
       }

@@ -5,7 +5,7 @@
 
 import express from 'express';
 import { upload } from '../middlewares/upload.middleware.js';
-import { uploadQuestionPaper, getQuestionPaperBySubject } from '../controllers/questionPaper.controller.js';
+import { uploadQuestionPaper, getQuestionPaperBySubject, updateQuestionMappings } from '../controllers/questionPaper.controller.js';
 
 const router = express.Router();
 
@@ -22,5 +22,12 @@ router.post('/upload', upload.any(), uploadQuestionPaper);
  * @access  Public
  */
 router.get('/:subjectId', getQuestionPaperBySubject);
+
+/**
+ * @route   PUT /api/v1/question-papers/mappings/:questionPaperId
+ * @desc    Update question-to-CO mappings manually
+ * @access  Public
+ */
+router.put('/mappings/:questionPaperId', updateQuestionMappings);
 
 export default router;

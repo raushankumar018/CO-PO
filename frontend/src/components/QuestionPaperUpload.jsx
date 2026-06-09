@@ -10,6 +10,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
   const [questions, setQuestions] = useState([]);
   const [report, setReport] = useState(null);
   const [viewMode, setViewMode] = useState('matrix'); // 'matrix' or 'detailed'
+  const [isEditing, setIsEditing] = useState(false);
 
   // Fetch question paper & mappings if they exist
   const fetchPaper = async () => {
@@ -57,13 +58,11 @@ export default function QuestionPaperUpload({ activeSubject }) {
     
     const formData = new FormData();
     formData.append('questionPaper', file);
-    // Include subjectId in body
     formData.append('subjectId', activeSubject._id);
 
     try {
       const res = await fetch('/api/v1/question-papers/upload', {
         method: 'POST',
-        // Also send subjectId header as fallback
         headers: {
           'subject-id': activeSubject._id
         },
@@ -73,7 +72,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
       
       if (json.success) {
         setSuccess('Question paper uploaded, consolidated, and mapped successfully!');
-        fetchPaper(); // Reload mappings
+        fetchPaper();
       } else {
         setError(json.message || 'Parsing failed.');
       }
@@ -108,6 +107,104 @@ export default function QuestionPaperUpload({ activeSubject }) {
       uploadFile(e.target.files[0]);
     }
   };
+
+  const handleCellChange = (qNo, coKey, val) => {
+    setQuestions((prev) =>
+      prev.map((q) => {
+        if (q.questionNo.toString().trim() !== qNo.toString().trim()) return q;
+        
+        let newMappedCOs = [...q.mappedCOs];
+        const exists = newMappedCOs.find((m) => m.coCode === coKey);
+        
+        if (exists) {
+          if (val === 0) {
+            newMappedCOs = newMappedCOs.filter((m) => m.coCode !== coKey);
+          } else {
+            newMappedCOs = newMappedCOs.map((m) =>
+              m.coCode === coKey ? { ...m, weightage: val } : m
+            );
+          }
+        } else if (val > 0) {
+          newMappedCOs.push({ coCode: coKey, weightage: val });
+        }
+        
+        return {
+          ...q,
+          mappedCOs: newMappedCOs
+        };
+      })
+    );
+  };
+
+  const handleSave = async () => {
+    if (!paper || !paper._id) return;
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    const mappingsPayload = questions.map((q) => ({
+      questionNo: q.questionNo,
+      mappedCOs: q.mappedCOs.map((m) => ({
+        coCode: m.coCode,
+        weightage: m.weightage
+      })),
+      justification: q.justification
+    }));
+
+    try {
+      const res = await fetch(`/api/v1/question-papers/mappings/${paper._id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ mappings: mappingsPayload })
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSuccess('Question mappings and weightages updated successfully!');
+        setIsEditing(false);
+        fetchPaper();
+      } else {
+        setError(json.message || 'Failed to save mappings.');
+      }
+    } catch (err) {
+      setError('An error occurred while saving.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getMatrixPreview = () => {
+    if (!report) return null;
+    const matrix = [];
+    const coTotals = { CO1: 0, CO2: 0, CO3: 0, CO4: 0, CO5: 0, CO6: 0 };
+    
+    questions.forEach((q) => {
+      const row = {
+        questionNo: q.questionNo,
+        marks: q.marks,
+        CO1: 0,
+        CO2: 0,
+        CO3: 0,
+        CO4: 0,
+        CO5: 0,
+        CO6: 0
+      };
+      
+      q.mappedCOs.forEach((m) => {
+        const coKey = m.coCode;
+        if (row.hasOwnProperty(coKey)) {
+          row[coKey] = Number(m.weightage);
+          coTotals[coKey] += Number(m.weightage);
+        }
+      });
+      matrix.push(row);
+    });
+    
+    return { matrix, coTotals };
+  };
+
+  const currentPreview = isEditing ? getMatrixPreview() : report;
 
   const getCognitiveBadgeColor = (level) => {
     switch (level) {
@@ -166,7 +263,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
         {loading && (
           <div className="loader-container">
             <div className="spinner"></div>
-            <p style={{ color: 'var(--text-secondary)' }}>Extracting questions, grouping parts, classifying cognitive levels & mapping COs...</p>
+            <p style={{ color: 'var(--text-secondary)' }}>Processing question paper mapping data...</p>
           </div>
         )}
       </div>
@@ -177,27 +274,58 @@ export default function QuestionPaperUpload({ activeSubject }) {
           <div className="glass-card-header">
             <h3 className="glass-card-title">Consolidated Questions & CO Mappings</h3>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-              <div className="workspace-tabs" style={{ padding: '3px', borderRadius: '8px', gap: '4px' }}>
-                <button 
-                  className={`tab-btn ${viewMode === 'matrix' ? 'active' : ''}`}
-                  onClick={() => setViewMode('matrix')}
-                  style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '6px' }}
-                >
-                  Matrix View
-                </button>
-                <button 
-                  className={`tab-btn ${viewMode === 'detailed' ? 'active' : ''}`}
-                  onClick={() => setViewMode('detailed')}
-                  style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '6px' }}
-                >
-                  Detailed List
-                </button>
-              </div>
+              {isEditing ? (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    onClick={handleSave} 
+                    className="btn btn-success" 
+                    disabled={loading}
+                    style={{ padding: '8px 16px', fontSize: '13px' }}
+                  >
+                    Save Changes
+                  </button>
+                  <button 
+                    onClick={() => { setIsEditing(false); fetchPaper(); }} 
+                    className="btn btn-secondary" 
+                    disabled={loading}
+                    style={{ padding: '8px 16px', fontSize: '13px' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    onClick={() => { setIsEditing(true); setViewMode('matrix'); }} 
+                    className="btn btn-secondary" 
+                    disabled={loading}
+                    style={{ padding: '8px 16px', fontSize: '13px' }}
+                  >
+                    Edit Matrix
+                  </button>
+                  <div className="workspace-tabs" style={{ padding: '3px', borderRadius: '8px', gap: '4px' }}>
+                    <button 
+                      className={`tab-btn ${viewMode === 'matrix' ? 'active' : ''}`}
+                      onClick={() => setViewMode('matrix')}
+                      style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '6px' }}
+                    >
+                      Matrix View
+                    </button>
+                    <button 
+                      className={`tab-btn ${viewMode === 'detailed' ? 'active' : ''}`}
+                      onClick={() => setViewMode('detailed')}
+                      style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '6px' }}
+                    >
+                      Detailed List
+                    </button>
+                  </div>
+                </div>
+              )}
               <span className="badge badge-emerald">{questions.length} Base Questions</span>
             </div>
           </div>
 
-          {report && report.coTotals && (
+          {currentPreview && currentPreview.coTotals && (
             <div style={{ marginBottom: '24px' }}>
               <h4 style={{ fontFamily: 'var(--font-heading)', fontSize: '13px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '12px' }}>
                 Course Outcome Weightage Sum Totals
@@ -207,7 +335,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
                   <div className="meta-card-item" key={coKey} style={{ padding: '10px 8px', textAlign: 'center' }}>
                     <div className="meta-card-label" style={{ fontSize: '10px' }}>{coKey}</div>
                     <div className="meta-card-value" style={{ fontSize: '18px', color: 'var(--accent-blue-hover)' }}>
-                      {report.coTotals[coKey] || 0}
+                      {currentPreview.coTotals[coKey] || 0}
                     </div>
                   </div>
                 ))}
@@ -215,7 +343,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
             </div>
           )}
 
-          {viewMode === 'matrix' && report && report.matrix ? (
+          {viewMode === 'matrix' && currentPreview && currentPreview.matrix ? (
             <div className="table-responsive">
               <table>
                 <thead>
@@ -232,7 +360,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {report.matrix.map((row, index) => (
+                  {currentPreview.matrix.map((row, index) => (
                     <tr key={index}>
                       <td style={{ color: 'var(--text-muted)', fontSize: '12px', width: '60px', backgroundColor: 'var(--bg-tertiary)', fontWeight: 'bold' }}>
                         {index}
@@ -242,8 +370,28 @@ export default function QuestionPaperUpload({ activeSubject }) {
                       {['CO1', 'CO2', 'CO3', 'CO4', 'CO5', 'CO6'].map((coKey) => {
                         const val = row[coKey] || 0;
                         return (
-                          <td key={coKey} className="matrix-cell" style={{ textAlign: 'center' }}>
-                            {val > 0 ? (
+                          <td key={coKey} className="matrix-cell" style={{ textAlign: 'center', padding: isEditing ? '4px' : '12px 16px' }}>
+                            {isEditing ? (
+                              <select 
+                                value={val} 
+                                onChange={(e) => handleCellChange(row.questionNo, coKey, Number(e.target.value))}
+                                style={{
+                                  backgroundColor: 'var(--bg-tertiary)',
+                                  color: 'var(--text-primary)',
+                                  border: '1px solid var(--border-color)',
+                                  borderRadius: '6px',
+                                  padding: '4px 8px',
+                                  fontSize: '13px',
+                                  width: '80px',
+                                  textAlign: 'center',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <option value={0}>-</option>
+                                <option value={2}>2</option>
+                                <option value={3}>3</option>
+                              </select>
+                            ) : val > 0 ? (
                               <span className={`matrix-cell-weight weight-${val}`}>
                                 {val}
                               </span>

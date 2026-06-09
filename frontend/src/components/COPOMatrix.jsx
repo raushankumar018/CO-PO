@@ -22,6 +22,7 @@ export default function COPOMatrix({ activeSubject }) {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [matrixData, setMatrixData] = useState([]);
+  const [isEditing, setIsEditing] = useState(false);
 
   const normalizeMatrix = (backendMatrix) => {
     if (!backendMatrix || !Array.isArray(backendMatrix)) return [];
@@ -86,6 +87,66 @@ export default function COPOMatrix({ activeSubject }) {
     }
   };
 
+  const handleCellChange = (co, po, val) => {
+    setMatrixData(prev => {
+      const exists = prev.find(r => r.coCode === co);
+      let newMatrix = [...prev];
+      if (exists) {
+        newMatrix = prev.map(row => {
+          if (row.coCode !== co) return row;
+          const mExists = row.mappings.find(m => m.poCode === po);
+          let newMappings = [];
+          if (mExists) {
+            if (val === 0) {
+              newMappings = row.mappings.filter(m => m.poCode !== po);
+            } else {
+              newMappings = row.mappings.map(m => m.poCode === po ? { ...m, correlation: val } : m);
+            }
+          } else if (val > 0) {
+            newMappings = [...row.mappings, { poCode: po, correlation: val }];
+          } else {
+            newMappings = row.mappings;
+          }
+          return { ...row, mappings: newMappings };
+        });
+      } else if (val > 0) {
+        newMatrix.push({
+          coCode: co,
+          mappings: [{ poCode: po, correlation: val }]
+        });
+      }
+      return newMatrix;
+    });
+  };
+
+  const handleSave = async () => {
+    if (!activeSubject) return;
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/v1/mappings/co-po/${activeSubject._id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ matrix: matrixData })
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setSuccess('CO-PO correlation matrix updated successfully!');
+        setMatrixData(normalizeMatrix(json.data.coPoMatrix.matrix));
+        setIsEditing(false);
+      } else {
+        setError(json.message || 'Saving failed.');
+      }
+    } catch (err) {
+      setError('An error occurred while saving the matrix.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getCorrelation = (co, po) => {
     const row = matrixData.find(r => r.coCode === co);
     if (!row) return 0;
@@ -110,19 +171,51 @@ export default function COPOMatrix({ activeSubject }) {
       <div className="glass-card">
         <div className="glass-card-header">
           <h3 className="glass-card-title">CO-PO Correlation Matrix (Outcome Mapping)</h3>
-          <button 
-            onClick={handleGenerate} 
-            className="btn btn-primary" 
-            disabled={loading}
-          >
-            {matrixData.length > 0 ? 'Regenerate Matrix' : 'Generate Matrix'}
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {isEditing ? (
+              <>
+                <button 
+                  onClick={handleSave} 
+                  className="btn btn-success" 
+                  disabled={loading}
+                >
+                  Save Changes
+                </button>
+                <button 
+                  onClick={() => { setIsEditing(false); fetchMatrix(); }} 
+                  className="btn btn-secondary" 
+                  disabled={loading}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                {matrixData.length > 0 && (
+                  <button 
+                    onClick={() => setIsEditing(true)} 
+                    className="btn btn-secondary" 
+                    disabled={loading}
+                  >
+                    Edit Matrix
+                  </button>
+                )}
+                <button 
+                  onClick={handleGenerate} 
+                  className="btn btn-primary" 
+                  disabled={loading}
+                >
+                  {matrixData.length > 0 ? 'Regenerate Matrix' : 'Generate Matrix'}
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {loading && (
           <div className="loader-container">
             <div className="spinner"></div>
-            <p style={{ color: 'var(--text-secondary)' }}>Semantically auditing course outcomes against standard program outcomes via local Ollama...</p>
+            <p style={{ color: 'var(--text-secondary)' }}>Processing outcome mappings...</p>
           </div>
         )}
 
@@ -149,8 +242,29 @@ export default function COPOMatrix({ activeSubject }) {
                       {PO_DESCRIPTIONS.map(p => {
                         const corr = getCorrelation(co, p.code);
                         return (
-                          <td key={p.code} className="matrix-cell">
-                            {corr > 0 ? (
+                          <td key={p.code} className="matrix-cell" style={{ padding: isEditing ? '4px' : '12px 16px' }}>
+                            {isEditing ? (
+                              <select 
+                                value={corr} 
+                                onChange={(e) => handleCellChange(co, p.code, Number(e.target.value))}
+                                style={{
+                                  backgroundColor: 'var(--bg-tertiary)',
+                                  color: 'var(--text-primary)',
+                                  border: '1px solid var(--border-color)',
+                                  borderRadius: '6px',
+                                  padding: '4px 8px',
+                                  fontSize: '13px',
+                                  width: '100%',
+                                  textAlign: 'center',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <option value={0}>-</option>
+                                <option value={1}>1</option>
+                                <option value={2}>2</option>
+                                <option value={3}>3</option>
+                              </select>
+                            ) : corr > 0 ? (
                               <span className={`matrix-cell-weight weight-${corr}`}>
                                 {corr}
                               </span>
