@@ -73,7 +73,6 @@ const PO_DESCRIPTIONS = [
     desc: 'Provide solutions that positively impact geo-socio-economic and environmental scenarios using Machine Learning, Artificial Intelligence, and related technologies.'
   }
 ];
-
 export default function COPOMatrix({ activeSubject }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
