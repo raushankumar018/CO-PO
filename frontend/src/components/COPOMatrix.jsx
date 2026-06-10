@@ -1,77 +1,20 @@
 import React, { useState, useEffect } from 'react';
 
 const PO_DESCRIPTIONS = [
-  {
-    code: 'PO1',
-    title: 'Engineering Knowledge',
-    desc: 'Apply the knowledge of mathematics, science, engineering fundamentals, and computer science and business systems to the solution of complex engineering and societal problems.'
-  },
-  {
-    code: 'PO2',
-    title: 'Problem Analysis',
-    desc: 'Identify, formulate, review research literature, and analyze complex engineering and business problems reaching substantiated conclusions using first principles of mathematics, natural sciences, and engineering sciences.'
-  },
-  {
-    code: 'PO3',
-    title: 'Design/Development of Solutions',
-    desc: 'Design solutions for complex engineering problems and design system components or processes that meet the specified needs with appropriate consideration for public health and safety, and cultural, societal, and environmental considerations.'
-  },
-  {
-    code: 'PO4',
-    title: 'Conduct Investigations of Complex Problems',
-    desc: 'Use research-based knowledge and research methods including design of experiments, analysis and interpretation of data, and synthesis of information to provide valid conclusions.'
-  },
-  {
-    code: 'PO5',
-    title: 'Modern Tool Usage',
-    desc: 'Create, select, and apply appropriate techniques, resources, and modern engineering and IT tools including prediction and modeling to complex engineering activities with an understanding of their limitations.'
-  },
-  {
-    code: 'PO6',
-    title: 'The Engineer and Society',
-    desc: 'Apply reasoning informed by contextual knowledge to assess societal, health, safety, legal, and cultural issues and the consequent responsibilities relevant to professional engineering and business practices.'
-  },
-  {
-    code: 'PO7',
-    title: 'Environment and Sustainability',
-    desc: 'Understand the impact of professional engineering solutions in business, societal, and environmental contexts, and demonstrate knowledge of, and the need for, sustainable development.'
-  },
-  {
-    code: 'PO8',
-    title: 'Ethics',
-    desc: 'Apply ethical principles and commit to professional ethics, responsibilities, and norms of engineering and business practices.'
-  },
-  {
-    code: 'PO9',
-    title: 'Individual and Team Work',
-    desc: 'Function effectively as an individual, and as a member or leader in diverse teams and multidisciplinary settings.'
-  },
-  {
-    code: 'PO10',
-    title: 'Communication',
-    desc: 'Communicate effectively on complex engineering activities with the engineering community and society at large, including the ability to comprehend and write effective reports and design documentation, make effective presentations, and give and receive clear instructions.'
-  },
-  {
-    code: 'PO11',
-    title: 'Project Management and Finance',
-    desc: 'Demonstrate knowledge and understanding of engineering, business, and management principles and apply these to one’s own work, as a member and leader in a team, to manage projects and multidisciplinary environments.'
-  },
-  {
-    code: 'PO12',
-    title: 'Life-long Learning',
-    desc: 'Recognize the need for, and have the preparation and ability to engage in independent and life-long learning in the broadest context of technological change.'
-  }
-,
-  {
-    code: 'PSO1',
-    title: 'Application Development Skills',
-    desc: 'Design and develop web applications using technologies such as HTML, JSP, PHP, ASP, and ASP.NET to address societal needs.'
-  },
-  {
-    code: 'PSO2',
-    title: 'Enrich Research Skills',
-    desc: 'Provide solutions that positively impact geo-socio-economic and environmental scenarios using Machine Learning, Artificial Intelligence, and related technologies.'
-  }
+  { code: 'PO1', title: 'Engineering Knowledge', desc: 'Apply mathematical and scientific concepts to solve complex engineering problems.' },
+  { code: 'PO2', title: 'Problem Analysis', desc: 'Identify, formulate, and analyze research-backed engineering formulations.' },
+  { code: 'PO3', title: 'Design/Development', desc: 'Design systems or component structures meeting security and environment standards.' },
+  { code: 'PO4', title: 'Conduct Investigations', desc: 'Investigate complex issues using experiments, data synthesis, and analysis.' },
+  { code: 'PO5', title: 'Modern Tool Usage', desc: 'Apply modern engineering techniques, resources, and IT/modeling software tools.' },
+  { code: 'PO6', title: 'The Engineer & Society', desc: 'Evaluate social, safety, legal, and cultural implications of engineering practice.' },
+  { code: 'PO7', title: 'Environment & Sustainability', desc: 'Assess sustainable solutions within environmental constraints.' },
+  { code: 'PO8', title: 'Ethics', desc: 'Commit to professional ethics, responsibilities, and code of conduct standards.' },
+  { code: 'PO9', title: 'Individual & Team Work', desc: 'Function effectively as an individual or member of diverse/multidisciplinary teams.' },
+  { code: 'PO10', title: 'Communication', desc: 'Communicate clearly, write reports, and deliver effective technical presentations.' },
+  { code: 'PO11', title: 'Project Management', desc: 'Apply financial/management principles to organize projects.' },
+  { code: 'PO12', title: 'Life-long Learning', desc: 'Recognize the need for, and engage in, independent learning in technology changes.' },
+  { code: 'PSO1', title: 'Software Engineering Methodologies', desc: 'Design and develop industrial-grade software applications using standard paradigms.' },
+  { code: 'PSO2', title: 'System Design & Technical Operations', desc: 'Establish and administer modern networking structures, databases, and secure system architectures.' }
 ];
 
 export default function COPOMatrix({ activeSubject }) {
