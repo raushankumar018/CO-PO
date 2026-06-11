@@ -23,6 +23,10 @@ import { extractQuestionsFromTextT4 } from '../services/questionPaper/t4Question
 import { mapQuestionToCOsT4 } from '../services/questionPaper/t4CoMapper.js';
 import { compileT4WeightageMatrix } from '../services/questionPaper/t4WeightageGenerator.js';
 
+// T5 services
+import { extractQuestionsFromTextT5 } from '../services/questionPaper/t5QuestionExtractor.js';
+import { compileT5WeightageMatrix } from '../services/questionPaper/t5WeightageGenerator.js';
+
 /**
  * Helper to extract base question number (e.g. "1" from "1a", "Q1(b)", "1.1").
  */
@@ -43,8 +47,8 @@ export const uploadQuestionPaper = async (req, res, next) => {
     }
 
     const examType = req.body.examType || req.query.examType || req.headers['exam-type'] || req.headers['examtype'] || 'T1';
-    if (!['T1', 'T4'].includes(examType)) {
-      return sendError(res, 'Invalid exam type. Must be T1 or T4.', 400);
+    if (!['T1', 'T4', 'T5'].includes(examType)) {
+      return sendError(res, 'Invalid exam type. Must be T1, T4, or T5.', 400);
     }
 
     // Retrieve file dynamically (supports 'questionPaper', 'Question', or any other key name)
@@ -76,6 +80,8 @@ export const uploadQuestionPaper = async (req, res, next) => {
     let extractedGroups;
     if (examType === 'T4') {
       extractedGroups = await extractQuestionsFromTextT4(cleanedText, coRecord, subject.unitsAndTopics);
+    } else if (examType === 'T5') {
+      extractedGroups = await extractQuestionsFromTextT5(cleanedText, coRecord, subject.unitsAndTopics);
     } else {
       extractedGroups = await extractQuestionsFromText(cleanedText);
     }
@@ -107,7 +113,7 @@ export const uploadQuestionPaper = async (req, res, next) => {
       for (const group of extractedGroups) {
         let module = group.module || 'MODULE_1';
         module = module.toUpperCase().replace('-', '_');
-        const toolType = group.toolType || 'T4';
+        const toolType = group.toolType || examType;
         activeToolType = toolType;
 
         if (group.questions && Array.isArray(group.questions)) {
@@ -160,6 +166,113 @@ export const uploadQuestionPaper = async (req, res, next) => {
               examType,
               mappedCOs: mappedCOs,
               justification: justification
+            });
+            savedMappings.push(mappingDoc);
+          }
+        }
+      }
+    } else if (examType === 'T5') {
+      // 6b. T5 Assignment Flow: Group subparts under base question numbers (1 to 4)
+      for (const group of extractedGroups) {
+        let module = group.module || 'MODULE_1';
+        module = module.toUpperCase().replace('-', '_');
+        const toolType = group.toolType || examType;
+        activeToolType = toolType;
+
+        if (group.questions && Array.isArray(group.questions)) {
+          // Group by base question number (e.g. 1a, 1b, 1-c -> 1)
+          const baseGroups = {};
+          const baseOrder = [];
+
+          for (const qItem of group.questions) {
+            const rawQNo = qItem.questionNo || qItem.question_no || qItem.qNo || qItem.no || '';
+            const baseNo = getBaseQuestionNumber(rawQNo) || 'Unknown';
+            if (!baseGroups[baseNo]) {
+              baseGroups[baseNo] = [];
+              baseOrder.push(baseNo);
+            }
+            baseGroups[baseNo].push(qItem);
+          }
+
+          // Process aggregated questions (representing parent Questions 1 to 4)
+          for (const baseNo of baseOrder) {
+            const subQs = baseGroups[baseNo];
+
+            // 1. Combine question texts
+            let combinedText = '';
+            if (subQs.length === 1) {
+              combinedText = subQs[0].questionText || subQs[0].text || subQs[0].question || 'No question text provided.';
+            } else {
+              combinedText = subQs.map(sub => {
+                const qNoStr = (sub.questionNo || '').toString().trim();
+                const qTextStr = (sub.questionText || sub.text || sub.question || '').trim();
+                return qNoStr ? `${qNoStr}: ${qTextStr}` : qTextStr;
+              }).join('; ');
+            }
+
+            // 2. Set marks to 20 for T5 assignments
+            const combinedMarks = 20;
+
+            // 3. Classifications (take first or default)
+            const cognitiveLevel = subQs[0].cognitiveLevel || 'Understand';
+            const nature = subQs[0].nature || 'Theory';
+
+            // Save Question document
+            const questionDoc = await Question.create({
+              questionPaperId: questionPaper._id,
+              subjectId,
+              module,
+              toolType,
+              examType,
+              questionNo: baseNo,
+              questionText: combinedText,
+              marks: combinedMarks,
+              cognitiveLevel,
+              nature
+            });
+            savedQuestions.push(questionDoc);
+
+            // 4. Merge and deduplicate mapped COs
+            const coMap = new Map();
+            subQs.forEach(sub => {
+              const list = sub.mappedCOs || [];
+              list.forEach(m => {
+                if (['CO1', 'CO2', 'CO3', 'CO4', 'CO5', 'CO6'].includes(m.coCode) && [2, 3].includes(Number(m.weightage))) {
+                  const currentWeight = coMap.get(m.coCode) || 0;
+                  if (Number(m.weightage) > currentWeight) {
+                    coMap.set(m.coCode, Number(m.weightage));
+                  }
+                }
+              });
+            });
+
+            const mergedCOs = Array.from(coMap.entries()).map(([coCode, weightage]) => ({
+              coCode,
+              weightage
+            }));
+
+            let finalCOs = mergedCOs;
+            if (finalCOs.length > 2) {
+              finalCOs = finalCOs.slice(0, 2);
+            }
+            if (finalCOs.length === 0) {
+              finalCOs.push({ coCode: 'CO1', weightage: 2 });
+            }
+
+            // 5. Combine justifications
+            const combinedJustification = subQs
+              .map(sub => sub.justification || '')
+              .filter(Boolean)
+              .join('; ') || 'Aligned with syllabus outcomes.';
+
+            // Save QuestionMapping
+            const mappingDoc = await QuestionMapping.create({
+              questionId: questionDoc._id,
+              questionPaperId: questionPaper._id,
+              questionNo: baseNo,
+              examType,
+              mappedCOs: finalCOs,
+              justification: combinedJustification
             });
             savedMappings.push(mappingDoc);
           }
@@ -255,6 +368,8 @@ export const uploadQuestionPaper = async (req, res, next) => {
     let compiled;
     if (examType === 'T4') {
       compiled = compileT4WeightageMatrix(savedQuestions, savedMappings);
+    } else if (examType === 'T5') {
+      compiled = compileT5WeightageMatrix(savedQuestions, savedMappings);
     } else {
       compiled = compileWeightageMatrix(savedQuestions, savedMappings);
     }
@@ -372,6 +487,8 @@ export const updateQuestionMappings = async (req, res, next) => {
     let compiled;
     if (examType === 'T4') {
       compiled = compileT4WeightageMatrix(allQuestions, allMappings);
+    } else if (examType === 'T5') {
+      compiled = compileT5WeightageMatrix(allQuestions, allMappings);
     } else {
       compiled = compileWeightageMatrix(allQuestions, allMappings);
     }

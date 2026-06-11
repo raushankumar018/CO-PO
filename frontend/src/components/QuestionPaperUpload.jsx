@@ -239,7 +239,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
       <div className="glass-card" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
         <div>
           <h4 style={{ fontFamily: 'var(--font-heading)', fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>Select Assessment Exam Type</h4>
-          <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Choose T1 or T4 Exam Mapping to load and view independent question reports.</p>
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Choose T1, T4, or T5 Exam Mapping to load and view independent question reports.</p>
         </div>
         <div className="workspace-tabs" style={{ padding: '4px', borderRadius: '8px' }}>
           <button 
@@ -255,6 +255,13 @@ export default function QuestionPaperUpload({ activeSubject }) {
             style={{ padding: '8px 20px', fontSize: '14px', borderRadius: '6px' }}
           >
             🎯 T4 Exam
+          </button>
+          <button 
+            className={`tab-btn ${activeExamType === 'T5' ? 'active' : ''}`}
+            onClick={() => { setActiveExamType('T5'); setIsEditing(false); }}
+            style={{ padding: '8px 20px', fontSize: '14px', borderRadius: '6px' }}
+          >
+            📝 T5 Assignment
           </button>
         </div>
       </div>
@@ -285,9 +292,9 @@ export default function QuestionPaperUpload({ activeSubject }) {
           <div className="upload-icon">📝</div>
           <p className="upload-text">Drag & drop {activeExamType} Exam PDF, or click to browse</p>
           <span className="upload-hint">
-            {activeExamType === 'T1' 
-              ? "Sub-questions (e.g. 1a, 1b) will be grouped, marks summed, and mapped automatically" 
-              : "Each question (including MCQs) will be parsed and mapped independently without aggregation"}
+            {activeExamType === 'T1' && "Sub-questions (e.g. 1a, 1b) will be grouped, marks summed, and mapped automatically"}
+            {activeExamType === 'T4' && "Each question (including MCQs) will be parsed and mapped independently without aggregation"}
+            {activeExamType === 'T5' && "Subparts (e.g. 1-a, 1-b) will be combined under parent Questions (1-4), marks aggregated to 20, and mapped"}
           </span>
         </div>
 

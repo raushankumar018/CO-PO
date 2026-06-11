@@ -20,8 +20,8 @@ const QuestionSchema = new mongoose.Schema(
     },
     module: {
       type: String,
-      enum: ['MODULE_1', 'MODULE_2'],
-      required: [true, 'Module specification (MODULE_1/MODULE_2) is required.']
+      enum: ['MODULE_1', 'MODULE_2', 'MODULE_3', 'MODULE_4'],
+      required: [true, 'Module specification (MODULE_1/MODULE_2/MODULE_3/MODULE_4) is required.']
     },
     toolType: {
       type: String,
@@ -30,7 +30,7 @@ const QuestionSchema = new mongoose.Schema(
     },
     examType: {
       type: String,
-      enum: ['T1', 'T4'],
+      enum: ['T1', 'T4', 'T5'],
       required: [true, 'Exam type is required.'],
       default: 'T1'
     },

@@ -46,7 +46,7 @@ const WeightageReportSchema = new mongoose.Schema(
     },
     examType: {
       type: String,
-      enum: ['T1', 'T4'],
+      enum: ['T1', 'T4', 'T5'],
       required: [true, 'Exam type is required.'],
       default: 'T1'
     }
