@@ -49,6 +49,12 @@ const QuestionMappingSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: ''
+    },
+    examType: {
+      type: String,
+      enum: ['T1', 'T4'],
+      required: [true, 'Exam type is required.'],
+      default: 'T1'
     }
   },
   {
@@ -57,7 +63,7 @@ const QuestionMappingSchema = new mongoose.Schema(
   }
 );
 
-QuestionMappingSchema.index({ questionPaperId: 1 });
+QuestionMappingSchema.index({ questionPaperId: 1, examType: 1 });
 
 const QuestionMapping = mongoose.model('QuestionMapping', QuestionMappingSchema);
 

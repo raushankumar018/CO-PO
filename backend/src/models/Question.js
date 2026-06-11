@@ -28,6 +28,12 @@ const QuestionSchema = new mongoose.Schema(
       enum: ['T1', 'T2', 'T3', 'T4', 'T5'],
       required: [true, 'Question assessment tool type (e.g. T1, T4) is required.']
     },
+    examType: {
+      type: String,
+      enum: ['T1', 'T4'],
+      required: [true, 'Exam type is required.'],
+      default: 'T1'
+    },
     questionNo: {
       type: String,
       required: [true, 'Question number (e.g. 1a, 2) is required.'],
@@ -61,7 +67,7 @@ const QuestionSchema = new mongoose.Schema(
 );
 
 // Optimize search speed on question paper grouping
-QuestionSchema.index({ questionPaperId: 1, toolType: 1 });
+QuestionSchema.index({ questionPaperId: 1, toolType: 1, examType: 1 });
 
 const Question = mongoose.model('Question', QuestionSchema);
 

@@ -13,6 +13,12 @@ const QuestionPaperSchema = new mongoose.Schema(
       ref: 'Subject',
       required: [true, 'Subject reference is required.']
     },
+    examType: {
+      type: String,
+      enum: ['T1', 'T4'],
+      required: [true, 'Exam type is required.'],
+      default: 'T1'
+    },
     paperPath: {
       type: String,
       required: [true, 'Question paper PDF path is required.']
@@ -23,6 +29,8 @@ const QuestionPaperSchema = new mongoose.Schema(
     collection: 'question_papers'
   }
 );
+
+QuestionPaperSchema.index({ subjectId: 1, examType: 1 });
 
 const QuestionPaper = mongoose.model('QuestionPaper', QuestionPaperSchema);
 

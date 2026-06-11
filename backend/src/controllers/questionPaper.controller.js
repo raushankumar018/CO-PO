@@ -18,6 +18,11 @@ import { mapQuestionToCOs } from '../services/questionPaper/coMapper.js';
 import { compileWeightageMatrix } from '../services/questionPaper/weightageGenerator.js';
 import { sendSuccess, sendError } from '../utils/responseHandler.js';
 
+// T4 services
+import { extractQuestionsFromTextT4 } from '../services/questionPaper/t4QuestionExtractor.js';
+import { mapQuestionToCOsT4 } from '../services/questionPaper/t4CoMapper.js';
+import { compileT4WeightageMatrix } from '../services/questionPaper/t4WeightageGenerator.js';
+
 /**
  * Helper to extract base question number (e.g. "1" from "1a", "Q1(b)", "1.1").
  */
@@ -37,6 +42,11 @@ export const uploadQuestionPaper = async (req, res, next) => {
       return sendError(res, 'Subject ID is required.', 400);
     }
 
+    const examType = req.body.examType || req.query.examType || req.headers['exam-type'] || req.headers['examtype'] || 'T1';
+    if (!['T1', 'T4'].includes(examType)) {
+      return sendError(res, 'Invalid exam type. Must be T1 or T4.', 400);
+    }
+
     // Retrieve file dynamically (supports 'questionPaper', 'Question', or any other key name)
     const file = req.files && req.files[0];
     if (!file) {
@@ -50,7 +60,7 @@ export const uploadQuestionPaper = async (req, res, next) => {
 
     const coRecord = await CourseOutcome.findOne({ subjectId });
     if (!coRecord) {
-      return sendError(res, 'Course Outcomes must be generated and verified before uploading a question paper.', 400);
+      return sendError(res, `Course Outcomes must be generated and verified before uploading a ${examType} Exam PDF.`, 400);
     }
 
     // Normalize filepath separators
@@ -63,104 +73,177 @@ export const uploadQuestionPaper = async (req, res, next) => {
     const cleanedText = cleanSyllabusText(rawText);
 
     // 3. Extract structured questions grouped by module & tool type
-    const extractedGroups = await extractQuestionsFromText(cleanedText);
+    let extractedGroups;
+    if (examType === 'T4') {
+      extractedGroups = await extractQuestionsFromTextT4(cleanedText, coRecord, subject.unitsAndTopics);
+    } else {
+      extractedGroups = await extractQuestionsFromText(cleanedText);
+    }
 
     // 4. Save or overwrite the QuestionPaper record
-    let questionPaper = await QuestionPaper.findOne({ subjectId });
+    let questionPaper = await QuestionPaper.findOne({ subjectId, examType });
     if (questionPaper) {
       questionPaper.paperPath = paperPath;
       await questionPaper.save();
     } else {
       questionPaper = new QuestionPaper({
         subjectId,
+        examType,
         paperPath
       });
       await questionPaper.save();
     }
 
     // 5. Clear previous questions and mappings for this paper to avoid stale duplicates
-    await Question.deleteMany({ questionPaperId: questionPaper._id });
-    await QuestionMapping.deleteMany({ questionPaperId: questionPaper._id });
+    await Question.deleteMany({ questionPaperId: questionPaper._id, examType });
+    await QuestionMapping.deleteMany({ questionPaperId: questionPaper._id, examType });
 
     const savedQuestions = [];
     const savedMappings = [];
-    let activeToolType = 'T1';
+    let activeToolType = examType;
 
-    // 6. Loop through groups, classify and map each base question
-    for (const group of extractedGroups) {
-      let module = group.module || 'MODULE_1';
-      module = module.toUpperCase().replace('-', '_'); // Normalize "MODULE-1" to "MODULE_1"
-      const toolType = group.toolType || 'T1';
-      activeToolType = toolType;
+    if (examType === 'T4') {
+      // 6a. T4 Flow: Loop through groups, map each question independently (no sub-question aggregation)
+      for (const group of extractedGroups) {
+        let module = group.module || 'MODULE_1';
+        module = module.toUpperCase().replace('-', '_');
+        const toolType = group.toolType || 'T4';
+        activeToolType = toolType;
 
-      if (group.questions && Array.isArray(group.questions)) {
-        // Group questions by base question number
-        const baseGroups = {};
-        const baseOrder = [];
+        if (group.questions && Array.isArray(group.questions)) {
+          for (const qItem of group.questions) {
+            const rawQNo = qItem.questionNo || qItem.question_no || qItem.qNo || qItem.no || '';
+            const questionNo = rawQNo ? rawQNo.toString().trim() : 'Unknown';
+            const questionText = qItem.questionText || qItem.text || qItem.question || 'No question text provided.';
 
-        for (const qItem of group.questions) {
-          const baseNo = getBaseQuestionNumber(qItem.questionNo);
-          if (!baseGroups[baseNo]) {
-            baseGroups[baseNo] = [];
-            baseOrder.push(baseNo);
+            // Cognitive level and nature are pre-classified in the optimized single-call flow
+            const cognitiveLevel = qItem.cognitiveLevel || 'Understand';
+            const nature = qItem.nature || 'Theory';
+
+            // Save Question document
+            const questionDoc = await Question.create({
+              questionPaperId: questionPaper._id,
+              subjectId,
+              module,
+              toolType,
+              examType,
+              questionNo: questionNo,
+              questionText: questionText,
+              marks: Number(qItem.marks) || 0,
+              cognitiveLevel: cognitiveLevel,
+              nature: nature
+            });
+            savedQuestions.push(questionDoc);
+
+            // Filter mapped COs (enforcing T4 mapping rules: weight 2 or 3 only, max 2 COs)
+            let mappedCOs = (qItem.mappedCOs || [])
+              .filter((m) => ['CO1', 'CO2', 'CO3', 'CO4', 'CO5', 'CO6'].includes(m.coCode) && [2, 3].includes(Number(m.weightage)))
+              .map((m) => ({
+                coCode: m.coCode,
+                weightage: Number(m.weightage)
+              }));
+
+            if (mappedCOs.length > 2) {
+              mappedCOs = mappedCOs.slice(0, 2);
+            }
+            if (mappedCOs.length === 0) {
+              mappedCOs.push({ coCode: 'CO1', weightage: 2 });
+            }
+
+            const justification = qItem.justification || 'Aligned with syllabus outcomes.';
+
+            // Save QuestionMapping
+            const mappingDoc = await QuestionMapping.create({
+              questionId: questionDoc._id,
+              questionPaperId: questionPaper._id,
+              questionNo: questionNo,
+              examType,
+              mappedCOs: mappedCOs,
+              justification: justification
+            });
+            savedMappings.push(mappingDoc);
           }
-          baseGroups[baseNo].push(qItem);
         }
+      }
+    } else {
+      // 6b. Existing T1 Flow: Loop through groups, classify and map each base question (with sub-question aggregation)
+      for (const group of extractedGroups) {
+        let module = group.module || 'MODULE_1';
+        module = module.toUpperCase().replace('-', '_'); // Normalize "MODULE-1" to "MODULE_1"
+        const toolType = group.toolType || 'T1';
+        activeToolType = toolType;
 
-        // Process aggregated base questions
-        for (const baseNo of baseOrder) {
-          const subQs = baseGroups[baseNo];
+        if (group.questions && Array.isArray(group.questions)) {
+          // Group questions by base question number
+          const baseGroups = {};
+          const baseOrder = [];
 
-          // Combine text
-          let combinedText = '';
-          if (subQs.length === 1) {
-            combinedText = subQs[0].questionText;
-          } else {
-            combinedText = subQs.map(subQ => {
-              const cleanedSubQNo = subQ.questionNo.toString().trim();
-              if (cleanedSubQNo === baseNo) {
-                return subQ.questionText;
-              }
-              return `${subQ.questionNo}: ${subQ.questionText}`;
-            }).join('\n');
+          for (const qItem of group.questions) {
+            const baseNo = getBaseQuestionNumber(qItem.questionNo);
+            if (!baseGroups[baseNo]) {
+              baseGroups[baseNo] = [];
+              baseOrder.push(baseNo);
+            }
+            baseGroups[baseNo].push(qItem);
           }
 
-          // Sum marks
-          const combinedMarks = subQs.reduce((sum, subQ) => sum + (Number(subQ.marks) || 0), 0);
+          // Process aggregated base questions
+          for (const baseNo of baseOrder) {
+            const subQs = baseGroups[baseNo];
 
-          // Classify cognitive level and nature of aggregated question
-          const classification = await classifyQuestionText(combinedText);
+            // Combine text
+            let combinedText = '';
+            if (subQs.length === 1) {
+              combinedText = subQs[0].questionText;
+            } else {
+              combinedText = subQs.map(subQ => {
+                const cleanedSubQNo = subQ.questionNo.toString().trim();
+                if (cleanedSubQNo === baseNo) {
+                  return subQ.questionText;
+                }
+                return `${subQ.questionNo}: ${subQ.questionText}`;
+              }).join('\n');
+            }
 
-          // Save Question document in the 'questions' collection
-          const questionDoc = await Question.create({
-            questionPaperId: questionPaper._id,
-            subjectId,
-            module,
-            toolType,
-            questionNo: baseNo,
-            questionText: combinedText,
-            marks: combinedMarks,
-            cognitiveLevel: classification.cognitiveLevel,
-            nature: classification.nature
-          });
-          savedQuestions.push(questionDoc);
+            // Sum marks
+            const combinedMarks = subQs.reduce((sum, subQ) => sum + (Number(subQ.marks) || 0), 0);
 
-          // Map aggregated question to COs
-          const mappingResult = await mapQuestionToCOs(
-            { questionNo: baseNo, questionText: combinedText, marks: combinedMarks },
-            coRecord,
-            subject.unitsAndTopics
-          );
+            // Classify cognitive level and nature of aggregated question
+            const classification = await classifyQuestionText(combinedText);
 
-          // Save QuestionMapping in the 'question_mappings' collection (excluding zero values)
-          const mappingDoc = await QuestionMapping.create({
-            questionId: questionDoc._id,
-            questionPaperId: questionPaper._id,
-            questionNo: baseNo,
-            mappedCOs: mappingResult.mappedCOs,
-            justification: mappingResult.justification
-          });
-          savedMappings.push(mappingDoc);
+            // Save Question document in the 'questions' collection
+            const questionDoc = await Question.create({
+              questionPaperId: questionPaper._id,
+              subjectId,
+              module,
+              toolType,
+              examType,
+              questionNo: baseNo,
+              questionText: combinedText,
+              marks: combinedMarks,
+              cognitiveLevel: classification.cognitiveLevel,
+              nature: classification.nature
+            });
+            savedQuestions.push(questionDoc);
+
+            // Map aggregated question to COs
+            const mappingResult = await mapQuestionToCOs(
+              { questionNo: baseNo, questionText: combinedText, marks: combinedMarks },
+              coRecord,
+              subject.unitsAndTopics
+            );
+
+            // Save QuestionMapping in the 'question_mappings' collection (excluding zero values)
+            const mappingDoc = await QuestionMapping.create({
+              questionId: questionDoc._id,
+              questionPaperId: questionPaper._id,
+              questionNo: baseNo,
+              examType,
+              mappedCOs: mappingResult.mappedCOs,
+              justification: mappingResult.justification
+            });
+            savedMappings.push(mappingDoc);
+          }
         }
       }
     }
@@ -169,18 +252,25 @@ export const uploadQuestionPaper = async (req, res, next) => {
     savedQuestions.sort((a, b) => a.questionNo.localeCompare(b.questionNo, undefined, { numeric: true, sensitivity: 'base' }));
 
     // 7. Compile and save the Weightage Report matrix (populating zero mappings dynamically)
-    const compiled = compileWeightageMatrix(savedQuestions, savedMappings);
-    await WeightageReport.deleteMany({ questionPaperId: questionPaper._id });
+    let compiled;
+    if (examType === 'T4') {
+      compiled = compileT4WeightageMatrix(savedQuestions, savedMappings);
+    } else {
+      compiled = compileWeightageMatrix(savedQuestions, savedMappings);
+    }
+
+    await WeightageReport.deleteMany({ questionPaperId: questionPaper._id, examType });
     
     const reportDoc = await WeightageReport.create({
       subjectId,
       questionPaperId: questionPaper._id,
       toolType: activeToolType,
+      examType,
       matrix: compiled.matrix,
       coTotals: compiled.coTotals
     });
 
-    return sendSuccess(res, 'Question paper uploaded, classified, and mapped successfully.', {
+    return sendSuccess(res, `${examType} Exam Mapping: Uploaded, classified, and mapped successfully.`, {
       questionPaper,
       questionsCount: savedQuestions.length,
       mappingsCount: savedMappings.length,
@@ -198,21 +288,23 @@ export const uploadQuestionPaper = async (req, res, next) => {
 export const getQuestionPaperBySubject = async (req, res, next) => {
   try {
     const { subjectId } = req.params;
-    const paper = await QuestionPaper.findOne({ subjectId });
+    const examType = req.query.examType || 'T1';
+    
+    const paper = await QuestionPaper.findOne({ subjectId, examType });
 
     if (!paper) {
-      return sendError(res, 'Question paper not found for this subject.', 404);
+      return sendError(res, `${examType} Exam Mapping not found for this subject.`, 404);
     }
 
     // Retrieve questions, mappings, and report
-    const questions = await Question.find({ questionPaperId: paper._id });
+    const questions = await Question.find({ questionPaperId: paper._id, examType });
     // Sort questions list naturally (numerically)
     questions.sort((a, b) => a.questionNo.localeCompare(b.questionNo, undefined, { numeric: true, sensitivity: 'base' }));
 
-    const mappings = await QuestionMapping.find({ questionPaperId: paper._id });
-    const report = await WeightageReport.findOne({ questionPaperId: paper._id });
+    const mappings = await QuestionMapping.find({ questionPaperId: paper._id, examType });
+    const report = await WeightageReport.findOne({ questionPaperId: paper._id, examType });
 
-    return sendSuccess(res, 'Question paper retrieved successfully.', {
+    return sendSuccess(res, `${examType} Exam Mapping retrieved successfully.`, {
       paper,
       questions,
       mappings,
@@ -234,17 +326,18 @@ export const updateQuestionMappings = async (req, res, next) => {
 
     const paper = await QuestionPaper.findById(questionPaperId);
     if (!paper) {
-      return sendError(res, 'Question paper not found.', 404);
+      return sendError(res, 'Exam Mapping not found.', 404);
     }
 
     const subjectId = paper.subjectId;
+    const examType = paper.examType || 'T1';
 
     for (const item of mappings) {
       const { questionNo, mappedCOs, justification } = item;
       
-      const qDoc = await Question.findOne({ questionPaperId, questionNo });
+      const qDoc = await Question.findOne({ questionPaperId, questionNo, examType });
       if (!qDoc) {
-        console.warn(`Question ${questionNo} not found for paper ${questionPaperId}`);
+        console.warn(`Question ${questionNo} not found for paper ${questionPaperId} with examType ${examType}`);
         continue;
       }
 
@@ -257,11 +350,12 @@ export const updateQuestionMappings = async (req, res, next) => {
         }));
 
       await QuestionMapping.findOneAndUpdate(
-        { questionPaperId, questionNo },
+        { questionPaperId, questionNo, examType },
         {
           questionId: qDoc._id,
           questionPaperId,
           questionNo,
+          examType,
           mappedCOs: filteredCOs,
           justification: justification || 'Manually updated mapping.'
         },
@@ -270,30 +364,36 @@ export const updateQuestionMappings = async (req, res, next) => {
     }
 
     // Load all questions and updated mappings to recompile the report
-    const allQuestions = await Question.find({ questionPaperId });
+    const allQuestions = await Question.find({ questionPaperId, examType });
     allQuestions.sort((a, b) => a.questionNo.localeCompare(b.questionNo, undefined, { numeric: true, sensitivity: 'base' }));
 
-    const allMappings = await QuestionMapping.find({ questionPaperId });
+    const allMappings = await QuestionMapping.find({ questionPaperId, examType });
 
-    const compiled = compileWeightageMatrix(allQuestions, allMappings);
+    let compiled;
+    if (examType === 'T4') {
+      compiled = compileT4WeightageMatrix(allQuestions, allMappings);
+    } else {
+      compiled = compileWeightageMatrix(allQuestions, allMappings);
+    }
 
     // Save or update weightage report
-    const existingReport = await WeightageReport.findOne({ questionPaperId });
-    const toolType = existingReport ? existingReport.toolType : 'T1';
+    const existingReport = await WeightageReport.findOne({ questionPaperId, examType });
+    const toolType = existingReport ? existingReport.toolType : examType;
 
     const reportDoc = await WeightageReport.findOneAndUpdate(
-      { questionPaperId },
+      { questionPaperId, examType },
       {
         subjectId,
         questionPaperId,
         toolType,
+        examType,
         matrix: compiled.matrix,
         coTotals: compiled.coTotals
       },
       { upsert: true, new: true }
     );
 
-    return sendSuccess(res, 'Question mappings and weightage matrix updated successfully.', {
+    return sendSuccess(res, `${examType} Exam Mapping and weightage matrix updated successfully.`, {
       questions: allQuestions.map((q) => {
         const mapping = allMappings.find((m) => m.questionNo.toString().trim() === q.questionNo.toString().trim());
         return {

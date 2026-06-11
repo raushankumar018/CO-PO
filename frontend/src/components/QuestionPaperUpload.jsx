@@ -11,6 +11,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
   const [report, setReport] = useState(null);
   const [viewMode, setViewMode] = useState('matrix'); // 'matrix' or 'detailed'
   const [isEditing, setIsEditing] = useState(false);
+  const [activeExamType, setActiveExamType] = useState('T1');
 
   // Fetch question paper & mappings if they exist
   const fetchPaper = async () => {
@@ -21,7 +22,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
     setQuestions([]);
     setReport(null);
     try {
-      const res = await fetch(`/api/v1/question-papers/${activeSubject._id}`);
+      const res = await fetch(`/api/v1/question-papers/${activeSubject._id}?examType=${activeExamType}`);
       const json = await res.json();
       if (json.success && json.data) {
         setPaper(json.data.paper);
@@ -47,7 +48,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
 
   useEffect(() => {
     fetchPaper();
-  }, [activeSubject]);
+  }, [activeSubject, activeExamType]);
 
   const uploadFile = async (file) => {
     if (!file || !activeSubject) return;
@@ -59,19 +60,21 @@ export default function QuestionPaperUpload({ activeSubject }) {
     const formData = new FormData();
     formData.append('questionPaper', file);
     formData.append('subjectId', activeSubject._id);
+    formData.append('examType', activeExamType);
 
     try {
       const res = await fetch('/api/v1/question-papers/upload', {
         method: 'POST',
         headers: {
-          'subject-id': activeSubject._id
+          'subject-id': activeSubject._id,
+          'exam-type': activeExamType
         },
         body: formData,
       });
       const json = await res.json();
       
       if (json.success) {
-        setSuccess('Question paper uploaded, consolidated, and mapped successfully!');
+        setSuccess(`${activeExamType} Exam Mapping: Uploaded, consolidated, and mapped successfully!`);
         fetchPaper();
       } else {
         setError(json.message || 'Parsing failed.');
@@ -222,7 +225,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
     return (
       <div className="alert alert-info">
         <h3>Syllabus Required</h3>
-        <p>Please select or upload a syllabus in the **Syllabus Ingestion** tab before uploading exam question papers.</p>
+        <p>Please select or upload a syllabus in the **Syllabus Ingestion** tab before uploading {activeExamType} Exam PDFs.</p>
       </div>
     );
   }
@@ -232,11 +235,35 @@ export default function QuestionPaperUpload({ activeSubject }) {
       {error && <div className="alert alert-danger">{error}</div>}
       {success && <div className="alert alert-success">{success}</div>}
 
+      {/* Exam Type Selector */}
+      <div className="glass-card" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+        <div>
+          <h4 style={{ fontFamily: 'var(--font-heading)', fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>Select Assessment Exam Type</h4>
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Choose T1 or T4 Exam Mapping to load and view independent question reports.</p>
+        </div>
+        <div className="workspace-tabs" style={{ padding: '4px', borderRadius: '8px' }}>
+          <button 
+            className={`tab-btn ${activeExamType === 'T1' ? 'active' : ''}`}
+            onClick={() => { setActiveExamType('T1'); setIsEditing(false); }}
+            style={{ padding: '8px 20px', fontSize: '14px', borderRadius: '6px' }}
+          >
+            📋 T1 Exam
+          </button>
+          <button 
+            className={`tab-btn ${activeExamType === 'T4' ? 'active' : ''}`}
+            onClick={() => { setActiveExamType('T4'); setIsEditing(false); }}
+            style={{ padding: '8px 20px', fontSize: '14px', borderRadius: '6px' }}
+          >
+            🎯 T4 Exam
+          </button>
+        </div>
+      </div>
+
       {/* Upload Form Box */}
       <div className="glass-card">
         <div className="glass-card-header">
-          <h3 className="glass-card-title">Exam Ingestion Engine</h3>
-          <span className="badge badge-blue">Upload Exam PDF</span>
+          <h3 className="glass-card-title">{activeExamType} Exam Mapping Engine</h3>
+          <span className="badge badge-blue">Upload {activeExamType} Exam PDF</span>
         </div>
 
         <div 
@@ -256,14 +283,18 @@ export default function QuestionPaperUpload({ activeSubject }) {
             disabled={loading}
           />
           <div className="upload-icon">📝</div>
-          <p className="upload-text">Drag & drop question paper PDF, or click to browse</p>
-          <span className="upload-hint">Sub-questions (e.g. 1a, 1b) will be grouped, marks summed, and mapped automatically</span>
+          <p className="upload-text">Drag & drop {activeExamType} Exam PDF, or click to browse</p>
+          <span className="upload-hint">
+            {activeExamType === 'T1' 
+              ? "Sub-questions (e.g. 1a, 1b) will be grouped, marks summed, and mapped automatically" 
+              : "Each question (including MCQs) will be parsed and mapped independently without aggregation"}
+          </span>
         </div>
 
         {loading && (
           <div className="loader-container">
             <div className="spinner"></div>
-            <p style={{ color: 'var(--text-secondary)' }}>Processing question paper mapping data...</p>
+            <p style={{ color: 'var(--text-secondary)' }}>Processing {activeExamType} Exam Mapping data...</p>
           </div>
         )}
       </div>
@@ -272,7 +303,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
       {questions.length > 0 && (
         <div className="glass-card">
           <div className="glass-card-header">
-            <h3 className="glass-card-title">Consolidated Questions & CO Mappings</h3>
+            <h3 className="glass-card-title">Consolidated Questions & CO Mappings ({activeExamType} Exam)</h3>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
               {isEditing ? (
                 <div style={{ display: 'flex', gap: '8px' }}>

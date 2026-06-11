@@ -47,7 +47,7 @@ export default function App() {
             className={`tab-btn ${activeTab === 'questions' ? 'active' : ''}`} 
             onClick={() => setActiveTab('questions')}
           >
-            📝 Exam Paper Processing
+            📝 T1 Exam Mapping
           </button>
           <button 
             className={`tab-btn ${activeTab === 'copo' ? 'active' : ''}`} 

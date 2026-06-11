@@ -43,6 +43,12 @@ const WeightageReportSchema = new mongoose.Schema(
       CO4: { type: Number, default: 0 },
       CO5: { type: Number, default: 0 },
       CO6: { type: Number, default: 0 }
+    },
+    examType: {
+      type: String,
+      enum: ['T1', 'T4'],
+      required: [true, 'Exam type is required.'],
+      default: 'T1'
     }
   },
   {
@@ -51,7 +57,7 @@ const WeightageReportSchema = new mongoose.Schema(
   }
 );
 
-WeightageReportSchema.index({ questionPaperId: 1, toolType: 1 });
+WeightageReportSchema.index({ questionPaperId: 1, toolType: 1, examType: 1 });
 
 const WeightageReport = mongoose.model('WeightageReport', WeightageReportSchema);
 
