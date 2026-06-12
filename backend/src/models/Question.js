@@ -1,7 +1,8 @@
 /**
  * src/models/Question.js
  * Mongoose Schema representing a specific question in an exam paper.
- * Stores cognitive level (Bloom's Taxonomy) and classification types.
+ * Stores cognitive level (Bloom's Taxonomy), classification type, and set number.
+ * Supports exam types: T1, T4, T5, SUMMATIVE_LAB
  */
 
 import mongoose from 'mongoose';
@@ -18,21 +19,29 @@ const QuestionSchema = new mongoose.Schema(
       ref: 'Subject',
       required: [true, 'Subject reference is required.']
     },
+    // For T1/T4/T5: MODULE_1 or MODULE_2.
+    // For SUMMATIVE_LAB: not applicable, stored as null.
     module: {
       type: String,
-      enum: ['MODULE_1', 'MODULE_2'],
-      required: [true, 'Module specification (MODULE_1/MODULE_2) is required.']
+      default: null
     },
     toolType: {
       type: String,
-      enum: ['T1', 'T2', 'T3', 'T4', 'T5'],
-      required: [true, 'Question assessment tool type (e.g. T1, T4) is required.']
+      enum: ['T1', 'T2', 'T3', 'T4', 'T5', 'SUMMATIVE_LAB'],
+      required: [true, 'Question assessment tool type (e.g. T1, T4, SUMMATIVE_LAB) is required.']
     },
     examType: {
       type: String,
-      enum: ['T1', 'T4', 'T5'],
+      enum: ['T1', 'T4', 'T5', 'SUMMATIVE_LAB'],
       required: [true, 'Exam type is required.'],
       default: 'T1'
+    },
+    // For SUMMATIVE_LAB: set number (e.g. "1", "2", "3").
+    // Not applicable for T1/T4/T5 (stored as null).
+    setNo: {
+      type: String,
+      default: null,
+      trim: true
     },
     questionNo: {
       type: String,
@@ -68,6 +77,8 @@ const QuestionSchema = new mongoose.Schema(
 
 // Optimize search speed on question paper grouping
 QuestionSchema.index({ questionPaperId: 1, toolType: 1, examType: 1 });
+// Compound index for lab set-question lookups
+QuestionSchema.index({ questionPaperId: 1, examType: 1, setNo: 1, questionNo: 1 });
 
 const Question = mongoose.model('Question', QuestionSchema);
 

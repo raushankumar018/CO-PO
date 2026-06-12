@@ -2,6 +2,7 @@
  * src/models/QuestionPaper.js
  * Mongoose Schema representing an uploaded Question Paper.
  * References the 'questions' collection.
+ * Supports exam types: T1, T4, T5, SUMMATIVE_LAB
  */
 
 import mongoose from 'mongoose';
@@ -15,7 +16,7 @@ const QuestionPaperSchema = new mongoose.Schema(
     },
     examType: {
       type: String,
-      enum: ['T1', 'T4', 'T5'],
+      enum: ['T1', 'T4', 'T5', 'SUMMATIVE_LAB'],
       required: [true, 'Exam type is required.'],
       default: 'T1'
     },
@@ -23,10 +24,11 @@ const QuestionPaperSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Question paper PDF path is required.']
     },
+    // For T1/T4/T5: MODULE_1 or MODULE_2.
+    // For SUMMATIVE_LAB: defaults to MODULE_1 (scoping done via examType).
     module: {
       type: String,
       enum: ['MODULE_1', 'MODULE_2'],
-      required: [true, 'Module specification (MODULE_1/MODULE_2) is required.'],
       default: 'MODULE_1'
     }
   },

@@ -1,6 +1,7 @@
 /**
  * src/controllers/questionPaper.controller.js
  * Controller managing the upload, extraction, classification, mapping, and reporting of Question Papers.
+ * Supports exam types: T1, T4, T5, SUMMATIVE_LAB
  */
 
 import QuestionPaper from '../models/QuestionPaper.js';
@@ -27,6 +28,10 @@ import { compileT4WeightageMatrix } from '../services/questionPaper/t4WeightageG
 import { extractQuestionsFromTextT5 } from '../services/questionPaper/t5QuestionExtractor.js';
 import { compileT5WeightageMatrix } from '../services/questionPaper/t5WeightageGenerator.js';
 
+// Summative Lab services
+import { extractQuestionsFromLabPaper } from '../services/questionPaper/labQuestionExtractor.js';
+import { compileLabWeightageMatrix } from '../services/questionPaper/labWeightageGenerator.js';
+
 /**
  * Helper to extract base question number (e.g. "1" from "1a", "Q1(b)", "1.1").
  */
@@ -37,7 +42,9 @@ const getBaseQuestionNumber = (qNo) => {
 };
 
 /**
- * Handles uploaded exam paper PDF, parses text, classifies questions, maps them to COs, compiles weightage matrices, and stores all documents.
+ * Handles uploaded exam paper PDF, parses text, classifies questions, maps them to COs,
+ * compiles weightage matrices, and stores all documents.
+ * Supports: T1, T4, T5, SUMMATIVE_LAB
  */
 export const uploadQuestionPaper = async (req, res, next) => {
   try {
@@ -47,8 +54,8 @@ export const uploadQuestionPaper = async (req, res, next) => {
     }
 
     const examType = req.body.examType || req.query.examType || req.headers['exam-type'] || req.headers['examtype'] || 'T1';
-    if (!['T1', 'T4', 'T5'].includes(examType)) {
-      return sendError(res, 'Invalid exam type. Must be T1, T4, or T5.', 400);
+    if (!['T1', 'T4', 'T5', 'SUMMATIVE_LAB'].includes(examType)) {
+      return sendError(res, 'Invalid exam type. Must be T1, T4, T5, or SUMMATIVE_LAB.', 400);
     }
 
     const moduleParam = req.body.module || req.query.module || req.headers['module'] || 'MODULE_1';
@@ -79,6 +86,21 @@ export const uploadQuestionPaper = async (req, res, next) => {
 
     // 2. Clean the raw text
     const cleanedText = cleanSyllabusText(rawText);
+
+    // ══════════════════════════════════════════════════════════════════════
+    // SUMMATIVE_LAB FLOW — independent branch, no interaction with T1/T4/T5
+    // ══════════════════════════════════════════════════════════════════════
+    if (examType === 'SUMMATIVE_LAB') {
+      return await handleLabUpload({
+        req, res, next,
+        subjectId, subject, coRecord,
+        paperPath, cleanedText
+      });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // T1 / T4 / T5 FLOW — unchanged from original implementation
+    // ══════════════════════════════════════════════════════════════════════
 
     // 3. Extract structured questions grouped by module & tool type
     let extractedGroups;
@@ -349,7 +371,7 @@ export const uploadQuestionPaper = async (req, res, next) => {
         }
       }
     } else {
-      // 6b. Existing T1 Flow: Loop through groups, classify and map each base question (with sub-question aggregation)
+      // 6c. Existing T1 Flow: Loop through groups, classify and map each base question (with sub-question aggregation)
       for (const group of extractedGroups) {
         let module = group.module || 'MODULE_1';
         // Normalize all LLM module variants: "MODULE 2", "MODULE-2", "MODULE2" → "MODULE_2"
@@ -447,7 +469,7 @@ export const uploadQuestionPaper = async (req, res, next) => {
     }
 
     await WeightageReport.deleteMany({ questionPaperId: questionPaper._id, examType, module: targetModuleNormalized });
-    
+
     const reportDoc = await WeightageReport.create({
       subjectId,
       questionPaperId: questionPaper._id,
@@ -470,13 +492,226 @@ export const uploadQuestionPaper = async (req, res, next) => {
   }
 };
 
+// ══════════════════════════════════════════════════════════════════════════════
+// SUMMATIVE LAB UPLOAD HANDLER
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Handles Summative Lab paper upload:
+ * - Dynamically detects all Sets and parent questions (A+B aggregated by LLM)
+ * - Stores one Question + one QuestionMapping per (setNo, questionNo)
+ * - Stores one WeightageReport per Set + one combined WeightageReport
+ */
+const handleLabUpload = async ({ req, res, next, subjectId, subject, coRecord, paperPath, cleanedText }) => {
+  try {
+    // Step 1: Extract + aggregate + classify + map via single LLM call
+    console.log('[questionPaperController] Starting SUMMATIVE_LAB extraction...');
+    const labSets = await extractQuestionsFromLabPaper(cleanedText, coRecord, subject.unitsAndTopics);
+
+    if (!Array.isArray(labSets) || labSets.length === 0) {
+      return sendError(res, 'Extraction failed: No sets detected in the Summative Lab paper.', 400);
+    }
+
+    // Validate: each set must have at least one question
+    for (const set of labSets) {
+      if (!set.questions || !Array.isArray(set.questions) || set.questions.length === 0) {
+        return sendError(res, `Extraction rejected: Set ${set.setNo} has no questions. Ensure the PDF contains valid lab questions.`, 400);
+      }
+    }
+
+    console.log(`[questionPaperController] SUMMATIVE_LAB: Detected ${labSets.length} set(s).`);
+    labSets.forEach(s => console.log(`[questionPaperController]   Set ${s.setNo}: ${s.questions.length} question(s)`));
+
+    // Step 2: Save or overwrite the QuestionPaper record (one per subject per lab upload)
+    let questionPaper = await QuestionPaper.findOne({ subjectId, examType: 'SUMMATIVE_LAB' });
+    if (questionPaper) {
+      questionPaper.paperPath = paperPath;
+      await questionPaper.save();
+    } else {
+      questionPaper = new QuestionPaper({
+        subjectId,
+        examType: 'SUMMATIVE_LAB',
+        module: 'MODULE_1', // Default; not semantically meaningful for lab
+        paperPath
+      });
+      await questionPaper.save();
+    }
+
+    // Step 3: Clear all previous lab questions, mappings, and reports for this paper
+    await Question.deleteMany({ questionPaperId: questionPaper._id, examType: 'SUMMATIVE_LAB' });
+    await QuestionMapping.deleteMany({ questionPaperId: questionPaper._id, examType: 'SUMMATIVE_LAB' });
+    await WeightageReport.deleteMany({ questionPaperId: questionPaper._id, examType: 'SUMMATIVE_LAB' });
+
+    const savedQuestions = [];
+    const savedMappings = [];
+
+    // Step 4: Save each (setNo, questionNo) as a unique Question + QuestionMapping
+    for (const setGroup of labSets) {
+      const setNo = (setGroup.setNo || '1').toString().trim();
+
+      for (const qItem of setGroup.questions) {
+        const rawQNo = qItem.questionNo || qItem.question_no || qItem.qNo || qItem.no || '';
+        const questionNo = rawQNo ? rawQNo.toString().trim() : 'Unknown';
+        const questionText = qItem.questionText || qItem.text || qItem.question || 'No question text provided.';
+        const cognitiveLevel = qItem.cognitiveLevel || 'Apply';
+        const nature = qItem.nature || 'Practical';
+        const marks = Number(qItem.marks) || 0;
+
+        // Save Question document (setNo + questionNo together make it unique)
+        const questionDoc = await Question.create({
+          questionPaperId: questionPaper._id,
+          subjectId,
+          module: null,          // Not applicable for lab
+          toolType: 'SUMMATIVE_LAB',
+          examType: 'SUMMATIVE_LAB',
+          setNo,
+          questionNo,
+          questionText,
+          marks,
+          cognitiveLevel,
+          nature
+        });
+        savedQuestions.push(questionDoc);
+
+        // Filter and enforce CO mapping rules (weightage 2 or 3 only, max 2 COs)
+        let mappedCOs = (qItem.mappedCOs || [])
+          .filter((m) => ['CO1', 'CO2', 'CO3', 'CO4', 'CO5', 'CO6'].includes(m.coCode) && [2, 3].includes(Number(m.weightage)))
+          .map((m) => ({ coCode: m.coCode, weightage: Number(m.weightage) }));
+
+        if (mappedCOs.length > 2) mappedCOs = mappedCOs.slice(0, 2);
+        if (mappedCOs.length === 0) mappedCOs.push({ coCode: 'CO1', weightage: 2 });
+
+        const justification = qItem.justification || 'Aligned with lab syllabus outcomes.';
+
+        // Save QuestionMapping document (scoped by setNo + questionNo)
+        const mappingDoc = await QuestionMapping.create({
+          questionId: questionDoc._id,
+          questionPaperId: questionPaper._id,
+          questionNo,
+          examType: 'SUMMATIVE_LAB',
+          module: null,          // Not applicable for lab
+          setNo,
+          mappedCOs,
+          justification
+        });
+        savedMappings.push(mappingDoc);
+      }
+    }
+
+    // Step 5: Compile per-set and combined weightage matrices
+    const compiled = compileLabWeightageMatrix(savedQuestions, savedMappings);
+
+    // Save per-set WeightageReport documents
+    const savedReports = [];
+    for (const setReport of compiled.perSet) {
+      const reportDoc = await WeightageReport.create({
+        subjectId,
+        questionPaperId: questionPaper._id,
+        toolType: 'SUMMATIVE_LAB',
+        examType: 'SUMMATIVE_LAB',
+        module: null,
+        setNo: setReport.setNo,
+        matrix: setReport.matrix,
+        coTotals: setReport.coTotals
+      });
+      savedReports.push(reportDoc);
+    }
+
+    // Save combined WeightageReport document
+    const combinedReportDoc = await WeightageReport.create({
+      subjectId,
+      questionPaperId: questionPaper._id,
+      toolType: 'SUMMATIVE_LAB',
+      examType: 'SUMMATIVE_LAB',
+      module: null,
+      setNo: 'COMBINED',
+      matrix: compiled.combined.matrix,
+      coTotals: compiled.combined.coTotals
+    });
+
+    return sendSuccess(res, 'Summative Lab Mapping: Uploaded, aggregated (A+B), classified, and mapped successfully.', {
+      questionPaper,
+      setsDetected: labSets.length,
+      questionsCount: savedQuestions.length,
+      mappingsCount: savedMappings.length,
+      setReports: savedReports,
+      combinedReport: combinedReportDoc
+    }, 201);
+  } catch (error) {
+    console.error('[questionPaperController] Error uploading Summative Lab paper:', error);
+    next(error);
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+
 /**
  * Retrieves the question paper data associated with a Subject, isolated by module.
+ * For SUMMATIVE_LAB: returns set-grouped questions and per-set + combined reports.
  */
 export const getQuestionPaperBySubject = async (req, res, next) => {
   try {
     const { subjectId } = req.params;
     const examType = req.query.examType || 'T1';
+
+    // ── SUMMATIVE_LAB fetch path ─────────────────────────────────────────────
+    if (examType === 'SUMMATIVE_LAB') {
+      const paper = await QuestionPaper.findOne({ subjectId, examType: 'SUMMATIVE_LAB' });
+
+      if (!paper) {
+        return sendError(res, 'Summative Lab Mapping not found for this subject.', 404);
+      }
+
+      // Fetch all lab questions and sort by setNo then questionNo
+      const questions = await Question.find({ questionPaperId: paper._id, examType: 'SUMMATIVE_LAB' });
+      questions.sort((a, b) => {
+        const setComp = (a.setNo || '').localeCompare(b.setNo || '', undefined, { numeric: true });
+        if (setComp !== 0) return setComp;
+        return a.questionNo.localeCompare(b.questionNo, undefined, { numeric: true, sensitivity: 'base' });
+      });
+
+      const mappings = await QuestionMapping.find({ questionPaperId: paper._id, examType: 'SUMMATIVE_LAB' });
+
+      // Fetch per-set and combined reports
+      const allReports = await WeightageReport.find({ questionPaperId: paper._id, examType: 'SUMMATIVE_LAB' });
+      const setReports = allReports.filter(r => r.setNo !== 'COMBINED');
+      const combinedReport = allReports.find(r => r.setNo === 'COMBINED') || null;
+
+      // Build set-grouped structure for frontend consumption
+      const setMap = new Map();
+      const setOrder = [];
+      questions.forEach(q => {
+        const sNo = q.setNo || '1';
+        if (!setMap.has(sNo)) {
+          setMap.set(sNo, []);
+          setOrder.push(sNo);
+        }
+        const mapping = mappings.find(
+          m => m.setNo === sNo && m.questionNo.toString().trim() === q.questionNo.toString().trim()
+        );
+        setMap.get(sNo).push({
+          ...q.toObject(),
+          mappedCOs: mapping ? mapping.mappedCOs : [],
+          justification: mapping ? mapping.justification : 'No mapping recorded.'
+        });
+      });
+
+      const sets = setOrder.map(sNo => ({
+        setNo: sNo,
+        questions: setMap.get(sNo)
+      }));
+
+      return sendSuccess(res, 'Summative Lab Mapping retrieved successfully.', {
+        paper,
+        sets,
+        questions,
+        mappings,
+        setReports,
+        combinedReport
+      });
+    }
+
+    // ── T1 / T4 / T5 fetch path (unchanged) ─────────────────────────────────
     const moduleParam = req.query.module || req.headers['module'] || 'MODULE_1';
     const targetModule = moduleParam.toUpperCase().replace('-', '_');
 
@@ -505,10 +740,12 @@ export const getQuestionPaperBySubject = async (req, res, next) => {
   }
 };
 
+// ══════════════════════════════════════════════════════════════════════════════
+
 export const updateQuestionMappings = async (req, res, next) => {
   try {
     const { questionPaperId } = req.params;
-    const { mappings } = req.body; // Array of { questionNo, mappedCOs, justification }
+    const { mappings } = req.body; // Array of { questionNo, mappedCOs, justification } or { setNo, questionNo, ... } for lab
 
     if (!mappings || !Array.isArray(mappings)) {
       return sendError(res, 'Mappings array is required.', 400);
@@ -521,8 +758,95 @@ export const updateQuestionMappings = async (req, res, next) => {
 
     const subjectId = paper.subjectId;
     const examType = paper.examType || 'T1';
-    const targetModule = paper.module || 'MODULE_1'; // Use the module stored on the paper
+    const targetModule = paper.module || 'MODULE_1';
 
+    // ── SUMMATIVE_LAB update path ────────────────────────────────────────────
+    if (examType === 'SUMMATIVE_LAB') {
+      for (const item of mappings) {
+        const { setNo, questionNo, mappedCOs, justification } = item;
+
+        // Find the corresponding Question document (scoped by setNo + questionNo)
+        const qDoc = await Question.findOne({ questionPaperId, examType: 'SUMMATIVE_LAB', setNo, questionNo });
+        if (!qDoc) {
+          console.warn(`[updateQuestionMappings] Lab question Set ${setNo} Q${questionNo} not found.`);
+          continue;
+        }
+
+        const filteredCOs = (mappedCOs || [])
+          .filter((m) => ['CO1', 'CO2', 'CO3', 'CO4', 'CO5', 'CO6'].includes(m.coCode) && [2, 3].includes(Number(m.weightage)))
+          .map((m) => ({ coCode: m.coCode, weightage: Number(m.weightage) }));
+
+        await QuestionMapping.findOneAndUpdate(
+          { questionPaperId, examType: 'SUMMATIVE_LAB', setNo, questionNo },
+          {
+            questionId: qDoc._id,
+            questionPaperId,
+            questionNo,
+            examType: 'SUMMATIVE_LAB',
+            module: null,
+            setNo,
+            mappedCOs: filteredCOs,
+            justification: justification || 'Manually updated lab mapping.'
+          },
+          { upsert: true, new: true }
+        );
+      }
+
+      // Recompile all lab reports after update
+      const allQuestions = await Question.find({ questionPaperId, examType: 'SUMMATIVE_LAB' });
+      const allMappings = await QuestionMapping.find({ questionPaperId, examType: 'SUMMATIVE_LAB' });
+
+      const compiled = compileLabWeightageMatrix(allQuestions, allMappings);
+
+      // Delete and recreate all lab reports
+      await WeightageReport.deleteMany({ questionPaperId, examType: 'SUMMATIVE_LAB' });
+
+      const updatedSetReports = [];
+      for (const setReport of compiled.perSet) {
+        const doc = await WeightageReport.create({
+          subjectId,
+          questionPaperId,
+          toolType: 'SUMMATIVE_LAB',
+          examType: 'SUMMATIVE_LAB',
+          module: null,
+          setNo: setReport.setNo,
+          matrix: setReport.matrix,
+          coTotals: setReport.coTotals
+        });
+        updatedSetReports.push(doc);
+      }
+
+      const combinedReportDoc = await WeightageReport.create({
+        subjectId,
+        questionPaperId,
+        toolType: 'SUMMATIVE_LAB',
+        examType: 'SUMMATIVE_LAB',
+        module: null,
+        setNo: 'COMBINED',
+        matrix: compiled.combined.matrix,
+        coTotals: compiled.combined.coTotals
+      });
+
+      // Build response with set-merged questions + updated mappings
+      const finalQuestions = allQuestions.map(q => {
+        const mapping = allMappings.find(
+          m => m.setNo === q.setNo && m.questionNo.toString().trim() === q.questionNo.toString().trim()
+        );
+        return {
+          ...q.toObject(),
+          mappedCOs: mapping ? mapping.mappedCOs : [],
+          justification: mapping ? mapping.justification : 'No mapping recorded.'
+        };
+      });
+
+      return sendSuccess(res, 'Summative Lab mappings and weightage matrices updated successfully.', {
+        questions: finalQuestions,
+        setReports: updatedSetReports,
+        combinedReport: combinedReportDoc
+      });
+    }
+
+    // ── T1 / T4 / T5 update path (unchanged) ────────────────────────────────
     for (const item of mappings) {
       const { questionNo, mappedCOs, justification } = item;
 

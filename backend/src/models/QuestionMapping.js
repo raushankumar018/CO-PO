@@ -2,6 +2,7 @@
  * src/models/QuestionMapping.js
  * Mongoose Schema representing mapping of a specific question to Course Outcomes (COs).
  * Strictly enforces weightages of 2 or 3. Excludes zero values.
+ * Supports exam types: T1, T4, T5, SUMMATIVE_LAB
  */
 
 import mongoose from 'mongoose';
@@ -52,15 +53,22 @@ const QuestionMappingSchema = new mongoose.Schema(
     },
     examType: {
       type: String,
-      enum: ['T1', 'T4', 'T5'],
+      enum: ['T1', 'T4', 'T5', 'SUMMATIVE_LAB'],
       required: [true, 'Exam type is required.'],
       default: 'T1'
     },
+    // For T1/T4/T5: MODULE_1 or MODULE_2.
+    // For SUMMATIVE_LAB: not applicable, stored as null.
     module: {
       type: String,
-      enum: ['MODULE_1', 'MODULE_2'],
-      required: [true, 'Module specification (MODULE_1/MODULE_2) is required.'],
-      default: 'MODULE_1'
+      default: null
+    },
+    // For SUMMATIVE_LAB: set number (e.g. "1", "2", "3").
+    // Not applicable for T1/T4/T5 (stored as null).
+    setNo: {
+      type: String,
+      default: null,
+      trim: true
     }
   },
   {
@@ -70,6 +78,8 @@ const QuestionMappingSchema = new mongoose.Schema(
 );
 
 QuestionMappingSchema.index({ questionPaperId: 1, examType: 1, module: 1 });
+// Compound index for lab set-question mapping lookups
+QuestionMappingSchema.index({ questionPaperId: 1, examType: 1, setNo: 1, questionNo: 1 });
 
 const QuestionMapping = mongoose.model('QuestionMapping', QuestionMappingSchema);
 
