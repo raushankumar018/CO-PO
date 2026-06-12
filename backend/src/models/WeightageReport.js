@@ -49,6 +49,12 @@ const WeightageReportSchema = new mongoose.Schema(
       enum: ['T1', 'T4', 'T5'],
       required: [true, 'Exam type is required.'],
       default: 'T1'
+    },
+    module: {
+      type: String,
+      enum: ['MODULE_1', 'MODULE_2'],
+      required: [true, 'Module specification (MODULE_1/MODULE_2) is required.'],
+      default: 'MODULE_1'
     }
   },
   {
@@ -57,7 +63,7 @@ const WeightageReportSchema = new mongoose.Schema(
   }
 );
 
-WeightageReportSchema.index({ questionPaperId: 1, toolType: 1, examType: 1 });
+WeightageReportSchema.index({ questionPaperId: 1, toolType: 1, examType: 1, module: 1 });
 
 const WeightageReport = mongoose.model('WeightageReport', WeightageReportSchema);
 

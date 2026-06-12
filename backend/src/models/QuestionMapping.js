@@ -55,6 +55,12 @@ const QuestionMappingSchema = new mongoose.Schema(
       enum: ['T1', 'T4', 'T5'],
       required: [true, 'Exam type is required.'],
       default: 'T1'
+    },
+    module: {
+      type: String,
+      enum: ['MODULE_1', 'MODULE_2'],
+      required: [true, 'Module specification (MODULE_1/MODULE_2) is required.'],
+      default: 'MODULE_1'
     }
   },
   {
@@ -63,7 +69,7 @@ const QuestionMappingSchema = new mongoose.Schema(
   }
 );
 
-QuestionMappingSchema.index({ questionPaperId: 1, examType: 1 });
+QuestionMappingSchema.index({ questionPaperId: 1, examType: 1, module: 1 });
 
 const QuestionMapping = mongoose.model('QuestionMapping', QuestionMappingSchema);
 

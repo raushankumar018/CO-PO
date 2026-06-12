@@ -39,7 +39,7 @@ export const uploadSyllabus = async (req, res, next) => {
       semester: extractedDetails.semester || 'N/A',
       syllabusPath,
       extractedContent: cleanedText,
-      unitsAndTopics: extractedDetails.unitsAndTopics || []
+      unitsAndTopics: (extractedDetails.unitsAndTopics || []).slice(0, 2)
     };
 
     let subject = await Subject.findOne({ subjectCode: subjectFields.subjectCode });

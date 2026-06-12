@@ -9,7 +9,7 @@ import ollamaConfig from '../../config/ollama.js';
 
 const SYSTEM_PROMPT = `
 You are a Senior OBE Curriculum Auditor and Academic Mapping Expert.
-Your task is to map a given exam question to one or more Course Outcomes (CO1 to CO6) based on the subject's syllabus.
+Your task is to map a given exam question (which belongs to a specific Syllabus Module) to one or more Course Outcomes (CO1 to CO6) based on the subject's syllabus.
 
 ### MAPPING & WEIGHTAGE SELECTION RULES
 1. **Weightage Levels**: You must ONLY use:
@@ -19,6 +19,13 @@ Your task is to map a given exam question to one or more Course Outcomes (CO1 to
    - Never assign weightages of 0 or 1.
    - If a CO is not related to the question, do NOT include that CO in the list.
 3. **Outcome Coverage**: Every question must map to at least one CO.
+
+### MODULE BOUNDARY VALIDATION RULES:
+1. **Module Context**: You are given the Module of the question (MODULE_1 or MODULE_2).
+2. **Dynamic CO-Module Association**: Analyze the syllabus units/topics and CO descriptions to identify which COs align with Module 1 vs Module 2.
+3. **Prefer Same-Module Mapping**: Prioritize mapping the question to COs that correspond to the question's module.
+4. **Cross-Module Mapping Restrictions**: You may only map to a CO belonging to a different module if there is strong, direct syllabus evidence of cross-topic relevance. If no such evidence exists, map strictly within the module's boundary.
+5. **Accreditation-Ready Justification**: Provide an academic justification explaining how the question's module and text map to the chosen Course Outcome(s), and how this mapping aligns with the syllabus boundaries.
 
 ### OUTPUT FORMAT
 Return ONLY a valid JSON object matching the schema. No markdown format, explanations, or notes.
@@ -38,7 +45,7 @@ Return ONLY a valid JSON object matching the schema. No markdown format, explana
 /**
  * Maps a single question to Course Outcomes.
  * 
- * @param {Object} question - The question object (containing questionNo, questionText, marks).
+ * @param {Object} question - The question object (containing questionNo, questionText, marks, module).
  * @param {Object} coRecord - The CourseOutcome record (containing CO1 to CO6).
  * @param {Array} unitsAndTopics - Syllabus units and topics.
  * @returns {Promise<Object>} - Object with { questionNo, mappedCOs, justification }
@@ -67,6 +74,7 @@ CO6: ${coRecord.CO6}
 
 Question to Map:
 Question Number: ${question.questionNo}
+Question Module: ${question.module || 'MODULE_1'}
 Question Text: "${question.questionText}"
 Marks: ${question.marks}
 `;
@@ -83,14 +91,17 @@ Marks: ${question.marks}
     });
 
     const responseText = response.data.response;
+    
+    // Sanitize any occasional typos like "weight,age" to "weightage"
+    const cleanedResponseText = responseText.replace(/"weight\s*,\s*age"/g, '"weightage"');
     let result;
 
     try {
-      result = JSON.parse(responseText);
+      result = JSON.parse(cleanedResponseText);
     } catch (parseError) {
-      console.error('[coMapper] JSON parsing failed, attempting cleanup:', responseText);
+      console.error('[coMapper] JSON parsing failed, attempting cleanup:', cleanedResponseText);
       const jsonRegex = /{[^]*}/;
-      const match = responseText.match(jsonRegex);
+      const match = cleanedResponseText.match(jsonRegex);
       if (match) {
         result = JSON.parse(match[0]);
       } else {

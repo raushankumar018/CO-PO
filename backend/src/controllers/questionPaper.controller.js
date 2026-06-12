@@ -51,6 +51,10 @@ export const uploadQuestionPaper = async (req, res, next) => {
       return sendError(res, 'Invalid exam type. Must be T1, T4, or T5.', 400);
     }
 
+    const moduleParam = req.body.module || req.query.module || req.headers['module'] || 'MODULE_1';
+    const normalizeModuleStr = (str) => str.toUpperCase().replace(/[\s\-]+/g, '_').replace(/MODULE(\d)/, 'MODULE_$1');
+    const targetModuleNormalized = normalizeModuleStr(moduleParam);
+
     // Retrieve file dynamically (supports 'questionPaper', 'Question', or any other key name)
     const file = req.files && req.files[0];
     if (!file) {
@@ -86,8 +90,65 @@ export const uploadQuestionPaper = async (req, res, next) => {
       extractedGroups = await extractQuestionsFromText(cleanedText);
     }
 
-    // 4. Save or overwrite the QuestionPaper record
-    let questionPaper = await QuestionPaper.findOne({ subjectId, examType });
+    if (!Array.isArray(extractedGroups)) {
+      return sendError(res, `Extraction failed: Extracted groups must be an array.`, 400);
+    }
+
+    // Filter extracted groups to strictly keep only the target module questions
+    // Normalize LLM output like "MODULE 2", "MODULE-2", "MODULE2" → "MODULE_2"
+    console.log(`[questionPaperController] LLM returned ${extractedGroups.length} group(s). Modules found: ${extractedGroups.map(g => g.module).join(', ')}. Target: ${targetModuleNormalized}`);
+    extractedGroups = extractedGroups.filter(group => {
+      const raw = (group.module || 'MODULE_1');
+      const groupModule = raw.toUpperCase().replace(/[\s\-]+/g, '_').replace(/MODULE(\d)/, 'MODULE_$1');
+      console.log(`[questionPaperController] Group module: "${raw}" → normalized: "${groupModule}" — match: ${groupModule === targetModuleNormalized}`);
+      return groupModule === targetModuleNormalized;
+    });
+    console.log(`[questionPaperController] After module filter: ${extractedGroups.length} group(s) remain.`);
+
+    // 3.5. Validation Check: Verify parsed question counts strictly match requirements
+    if (examType === 'T4') {
+      let totalT4Count = 0;
+      for (const group of extractedGroups) {
+        if (group.questions && Array.isArray(group.questions)) {
+          totalT4Count += group.questions.length;
+        }
+      }
+      if (totalT4Count !== 13) {
+        return sendError(res, `Extraction rejected: T4 Examination must produce exactly 13 questions for ${targetModuleNormalized}, but got ${totalT4Count}.`, 400);
+      }
+    } else if (examType === 'T5') {
+      const baseQuestionSet = new Set();
+      for (const group of extractedGroups) {
+        if (group.questions && Array.isArray(group.questions)) {
+          for (const qItem of group.questions) {
+            const rawQNo = qItem.questionNo || qItem.question_no || qItem.qNo || qItem.no || '';
+            const baseNo = getBaseQuestionNumber(rawQNo) || 'Unknown';
+            baseQuestionSet.add(baseNo);
+          }
+        }
+      }
+      if (baseQuestionSet.size > 4) {
+        return sendError(res, `Extraction rejected: T5 Assignment must produce at most 4 parent questions, but got ${baseQuestionSet.size}.`, 400);
+      }
+    } else {
+      // T1 Exam
+      const baseQuestionSet = new Set();
+      for (const group of extractedGroups) {
+        if (group.questions && Array.isArray(group.questions)) {
+          for (const qItem of group.questions) {
+            const baseNo = getBaseQuestionNumber(qItem.questionNo);
+            baseQuestionSet.add(baseNo);
+          }
+        }
+      }
+      if (baseQuestionSet.size !== 13) {
+        const found = [...baseQuestionSet].sort((a, b) => Number(a) - Number(b)).join(', ');
+        return sendError(res, `Extraction rejected: T1 Examination must produce exactly 13 questions for ${targetModuleNormalized}, but got ${baseQuestionSet.size}. Found: [${found || 'none'}]. Ensure the PDF header says MODULE 2 and the paper has exactly 13 questions (Q1–Q13).`, 400);
+      }
+    }
+
+    // 4. Save or overwrite the QuestionPaper record (isolated by module)
+    let questionPaper = await QuestionPaper.findOne({ subjectId, examType, module: targetModuleNormalized });
     if (questionPaper) {
       questionPaper.paperPath = paperPath;
       await questionPaper.save();
@@ -95,14 +156,15 @@ export const uploadQuestionPaper = async (req, res, next) => {
       questionPaper = new QuestionPaper({
         subjectId,
         examType,
+        module: targetModuleNormalized,
         paperPath
       });
       await questionPaper.save();
     }
 
-    // 5. Clear previous questions and mappings for this paper to avoid stale duplicates
-    await Question.deleteMany({ questionPaperId: questionPaper._id, examType });
-    await QuestionMapping.deleteMany({ questionPaperId: questionPaper._id, examType });
+    // 5. Clear previous questions and mappings for this paper (isolated by module)
+    await Question.deleteMany({ questionPaperId: questionPaper._id, examType, module: targetModuleNormalized });
+    await QuestionMapping.deleteMany({ questionPaperId: questionPaper._id, examType, module: targetModuleNormalized });
 
     const savedQuestions = [];
     const savedMappings = [];
@@ -112,7 +174,7 @@ export const uploadQuestionPaper = async (req, res, next) => {
       // 6a. T4 Flow: Loop through groups, map each question independently (no sub-question aggregation)
       for (const group of extractedGroups) {
         let module = group.module || 'MODULE_1';
-        module = module.toUpperCase().replace('-', '_');
+        module = module.toUpperCase().replace(/[\s\-]+/g, '_').replace(/MODULE(\d)/, 'MODULE_$1');
         const toolType = group.toolType || examType;
         activeToolType = toolType;
 
@@ -158,12 +220,13 @@ export const uploadQuestionPaper = async (req, res, next) => {
 
             const justification = qItem.justification || 'Aligned with syllabus outcomes.';
 
-            // Save QuestionMapping
+            // Save QuestionMapping (isolated by module)
             const mappingDoc = await QuestionMapping.create({
               questionId: questionDoc._id,
               questionPaperId: questionPaper._id,
               questionNo: questionNo,
               examType,
+              module: targetModuleNormalized,
               mappedCOs: mappedCOs,
               justification: justification
             });
@@ -173,9 +236,10 @@ export const uploadQuestionPaper = async (req, res, next) => {
       }
     } else if (examType === 'T5') {
       // 6b. T5 Assignment Flow: Group subparts under base question numbers (1 to 4)
+      const processedBaseNos = new Set();
       for (const group of extractedGroups) {
         let module = group.module || 'MODULE_1';
-        module = module.toUpperCase().replace('-', '_');
+        module = module.toUpperCase().replace(/[\s\-]+/g, '_').replace(/MODULE(\d)/, 'MODULE_$1');
         const toolType = group.toolType || examType;
         activeToolType = toolType;
 
@@ -196,6 +260,11 @@ export const uploadQuestionPaper = async (req, res, next) => {
 
           // Process aggregated questions (representing parent Questions 1 to 4)
           for (const baseNo of baseOrder) {
+            if (processedBaseNos.has(baseNo)) {
+              continue; // Skip duplicate question numbers across groups
+            }
+            processedBaseNos.add(baseNo);
+
             const subQs = baseGroups[baseNo];
 
             // 1. Combine question texts
@@ -265,12 +334,13 @@ export const uploadQuestionPaper = async (req, res, next) => {
               .filter(Boolean)
               .join('; ') || 'Aligned with syllabus outcomes.';
 
-            // Save QuestionMapping
+            // Save QuestionMapping (isolated by module)
             const mappingDoc = await QuestionMapping.create({
               questionId: questionDoc._id,
               questionPaperId: questionPaper._id,
               questionNo: baseNo,
               examType,
+              module: targetModuleNormalized,
               mappedCOs: finalCOs,
               justification: combinedJustification
             });
@@ -282,7 +352,8 @@ export const uploadQuestionPaper = async (req, res, next) => {
       // 6b. Existing T1 Flow: Loop through groups, classify and map each base question (with sub-question aggregation)
       for (const group of extractedGroups) {
         let module = group.module || 'MODULE_1';
-        module = module.toUpperCase().replace('-', '_'); // Normalize "MODULE-1" to "MODULE_1"
+        // Normalize all LLM module variants: "MODULE 2", "MODULE-2", "MODULE2" → "MODULE_2"
+        module = module.toUpperCase().replace(/[\s\-]+/g, '_').replace(/MODULE(\d)/, 'MODULE_$1');
         const toolType = group.toolType || 'T1';
         activeToolType = toolType;
 
@@ -341,17 +412,18 @@ export const uploadQuestionPaper = async (req, res, next) => {
 
             // Map aggregated question to COs
             const mappingResult = await mapQuestionToCOs(
-              { questionNo: baseNo, questionText: combinedText, marks: combinedMarks },
+              { questionNo: baseNo, questionText: combinedText, marks: combinedMarks, module },
               coRecord,
               subject.unitsAndTopics
             );
 
-            // Save QuestionMapping in the 'question_mappings' collection (excluding zero values)
+            // Save QuestionMapping in the 'question_mappings' collection (isolated by module)
             const mappingDoc = await QuestionMapping.create({
               questionId: questionDoc._id,
               questionPaperId: questionPaper._id,
               questionNo: baseNo,
               examType,
+              module: targetModuleNormalized,
               mappedCOs: mappingResult.mappedCOs,
               justification: mappingResult.justification
             });
@@ -374,13 +446,14 @@ export const uploadQuestionPaper = async (req, res, next) => {
       compiled = compileWeightageMatrix(savedQuestions, savedMappings);
     }
 
-    await WeightageReport.deleteMany({ questionPaperId: questionPaper._id, examType });
+    await WeightageReport.deleteMany({ questionPaperId: questionPaper._id, examType, module: targetModuleNormalized });
     
     const reportDoc = await WeightageReport.create({
       subjectId,
       questionPaperId: questionPaper._id,
       toolType: activeToolType,
       examType,
+      module: targetModuleNormalized,
       matrix: compiled.matrix,
       coTotals: compiled.coTotals
     });
@@ -398,28 +471,30 @@ export const uploadQuestionPaper = async (req, res, next) => {
 };
 
 /**
- * Retrieves the question paper data associated with a Subject.
+ * Retrieves the question paper data associated with a Subject, isolated by module.
  */
 export const getQuestionPaperBySubject = async (req, res, next) => {
   try {
     const { subjectId } = req.params;
     const examType = req.query.examType || 'T1';
-    
-    const paper = await QuestionPaper.findOne({ subjectId, examType });
+    const moduleParam = req.query.module || req.headers['module'] || 'MODULE_1';
+    const targetModule = moduleParam.toUpperCase().replace('-', '_');
+
+    const paper = await QuestionPaper.findOne({ subjectId, examType, module: targetModule });
 
     if (!paper) {
-      return sendError(res, `${examType} Exam Mapping not found for this subject.`, 404);
+      return sendError(res, `${examType} Exam Mapping not found for this subject (${targetModule}).`, 404);
     }
 
-    // Retrieve questions, mappings, and report
-    const questions = await Question.find({ questionPaperId: paper._id, examType });
+    // Retrieve questions, mappings, and report — all filtered by module
+    const questions = await Question.find({ questionPaperId: paper._id, examType, module: targetModule });
     // Sort questions list naturally (numerically)
     questions.sort((a, b) => a.questionNo.localeCompare(b.questionNo, undefined, { numeric: true, sensitivity: 'base' }));
 
-    const mappings = await QuestionMapping.find({ questionPaperId: paper._id, examType });
-    const report = await WeightageReport.findOne({ questionPaperId: paper._id, examType });
+    const mappings = await QuestionMapping.find({ questionPaperId: paper._id, examType, module: targetModule });
+    const report = await WeightageReport.findOne({ questionPaperId: paper._id, examType, module: targetModule });
 
-    return sendSuccess(res, `${examType} Exam Mapping retrieved successfully.`, {
+    return sendSuccess(res, `${examType} Exam Mapping retrieved successfully (${targetModule}).`, {
       paper,
       questions,
       mappings,
@@ -446,13 +521,14 @@ export const updateQuestionMappings = async (req, res, next) => {
 
     const subjectId = paper.subjectId;
     const examType = paper.examType || 'T1';
+    const targetModule = paper.module || 'MODULE_1'; // Use the module stored on the paper
 
     for (const item of mappings) {
       const { questionNo, mappedCOs, justification } = item;
-      
-      const qDoc = await Question.findOne({ questionPaperId, questionNo, examType });
+
+      const qDoc = await Question.findOne({ questionPaperId, questionNo, examType, module: targetModule });
       if (!qDoc) {
-        console.warn(`Question ${questionNo} not found for paper ${questionPaperId} with examType ${examType}`);
+        console.warn(`Question ${questionNo} not found for paper ${questionPaperId}, examType ${examType}, module ${targetModule}`);
         continue;
       }
 
@@ -465,12 +541,13 @@ export const updateQuestionMappings = async (req, res, next) => {
         }));
 
       await QuestionMapping.findOneAndUpdate(
-        { questionPaperId, questionNo, examType },
+        { questionPaperId, questionNo, examType, module: targetModule },
         {
           questionId: qDoc._id,
           questionPaperId,
           questionNo,
           examType,
+          module: targetModule,
           mappedCOs: filteredCOs,
           justification: justification || 'Manually updated mapping.'
         },
@@ -478,11 +555,11 @@ export const updateQuestionMappings = async (req, res, next) => {
       );
     }
 
-    // Load all questions and updated mappings to recompile the report
-    const allQuestions = await Question.find({ questionPaperId, examType });
+    // Load all questions and updated mappings for this specific module
+    const allQuestions = await Question.find({ questionPaperId, examType, module: targetModule });
     allQuestions.sort((a, b) => a.questionNo.localeCompare(b.questionNo, undefined, { numeric: true, sensitivity: 'base' }));
 
-    const allMappings = await QuestionMapping.find({ questionPaperId, examType });
+    const allMappings = await QuestionMapping.find({ questionPaperId, examType, module: targetModule });
 
     let compiled;
     if (examType === 'T4') {
@@ -493,24 +570,25 @@ export const updateQuestionMappings = async (req, res, next) => {
       compiled = compileWeightageMatrix(allQuestions, allMappings);
     }
 
-    // Save or update weightage report
-    const existingReport = await WeightageReport.findOne({ questionPaperId, examType });
+    // Save or update weightage report — isolated by module
+    const existingReport = await WeightageReport.findOne({ questionPaperId, examType, module: targetModule });
     const toolType = existingReport ? existingReport.toolType : examType;
 
     const reportDoc = await WeightageReport.findOneAndUpdate(
-      { questionPaperId, examType },
+      { questionPaperId, examType, module: targetModule },
       {
         subjectId,
         questionPaperId,
         toolType,
         examType,
+        module: targetModule,
         matrix: compiled.matrix,
         coTotals: compiled.coTotals
       },
       { upsert: true, new: true }
     );
 
-    return sendSuccess(res, `${examType} Exam Mapping and weightage matrix updated successfully.`, {
+    return sendSuccess(res, `${examType} Exam Mapping and weightage matrix updated successfully (${targetModule}).`, {
       questions: allQuestions.map((q) => {
         const mapping = allMappings.find((m) => m.questionNo.toString().trim() === q.questionNo.toString().trim());
         return {

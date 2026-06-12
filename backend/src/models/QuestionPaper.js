@@ -22,6 +22,12 @@ const QuestionPaperSchema = new mongoose.Schema(
     paperPath: {
       type: String,
       required: [true, 'Question paper PDF path is required.']
+    },
+    module: {
+      type: String,
+      enum: ['MODULE_1', 'MODULE_2'],
+      required: [true, 'Module specification (MODULE_1/MODULE_2) is required.'],
+      default: 'MODULE_1'
     }
   },
   {
@@ -30,7 +36,7 @@ const QuestionPaperSchema = new mongoose.Schema(
   }
 );
 
-QuestionPaperSchema.index({ subjectId: 1, examType: 1 });
+QuestionPaperSchema.index({ subjectId: 1, examType: 1, module: 1 });
 
 const QuestionPaper = mongoose.model('QuestionPaper', QuestionPaperSchema);
 

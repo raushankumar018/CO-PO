@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function QuestionPaperUpload({ activeSubject }) {
+export default function QuestionPaperUpload({ activeSubject, activeModule }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -13,7 +13,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
   const [isEditing, setIsEditing] = useState(false);
   const [activeExamType, setActiveExamType] = useState('T1');
 
-  // Fetch question paper & mappings if they exist
+  // Fetch question paper & mappings if they exist — scoped to activeModule
   const fetchPaper = async () => {
     if (!activeSubject) return;
     setLoading(true);
@@ -21,8 +21,9 @@ export default function QuestionPaperUpload({ activeSubject }) {
     setPaper(null);
     setQuestions([]);
     setReport(null);
+    const mod = activeModule || 'MODULE_1';
     try {
-      const res = await fetch(`/api/v1/question-papers/${activeSubject._id}?examType=${activeExamType}`);
+      const res = await fetch(`/api/v1/question-papers/${activeSubject._id}?examType=${activeExamType}&module=${mod}`);
       const json = await res.json();
       if (json.success && json.data) {
         setPaper(json.data.paper);
@@ -47,8 +48,15 @@ export default function QuestionPaperUpload({ activeSubject }) {
   };
 
   useEffect(() => {
+    // Reset all module-specific state and re-fetch when module or subject or examType changes
+    setPaper(null);
+    setQuestions([]);
+    setReport(null);
+    setError(null);
+    setSuccess(null);
+    setIsEditing(false);
     fetchPaper();
-  }, [activeSubject, activeExamType]);
+  }, [activeSubject, activeExamType, activeModule]);
 
   const uploadFile = async (file) => {
     if (!file || !activeSubject) return;
@@ -57,24 +65,27 @@ export default function QuestionPaperUpload({ activeSubject }) {
     setError(null);
     setSuccess(null);
     
+    const mod = activeModule || 'MODULE_1';
     const formData = new FormData();
     formData.append('questionPaper', file);
     formData.append('subjectId', activeSubject._id);
     formData.append('examType', activeExamType);
+    formData.append('module', mod);
 
     try {
       const res = await fetch('/api/v1/question-papers/upload', {
         method: 'POST',
         headers: {
           'subject-id': activeSubject._id,
-          'exam-type': activeExamType
+          'exam-type': activeExamType,
+          'module': mod
         },
         body: formData,
       });
       const json = await res.json();
       
       if (json.success) {
-        setSuccess(`${activeExamType} Exam Mapping: Uploaded, consolidated, and mapped successfully!`);
+        setSuccess(`${activeExamType} Exam Mapping (${mod}): Uploaded, consolidated, and mapped successfully!`);
         fetchPaper();
       } else {
         setError(json.message || 'Parsing failed.');
@@ -207,7 +218,9 @@ export default function QuestionPaperUpload({ activeSubject }) {
     return { matrix, coTotals };
   };
 
-  const currentPreview = isEditing ? getMatrixPreview() : report;
+  const currentPreview = getMatrixPreview();
+  // Since data is already fetched and filtered by module server-side, show all returned questions
+  const filteredQuestions = questions;
 
   const getCognitiveBadgeColor = (level) => {
     switch (level) {
@@ -307,10 +320,10 @@ export default function QuestionPaperUpload({ activeSubject }) {
       </div>
 
       {/* Mapped Questions Consolidated Viewer */}
-      {questions.length > 0 && (
+      {filteredQuestions.length > 0 && (
         <div className="glass-card">
           <div className="glass-card-header">
-            <h3 className="glass-card-title">Consolidated Questions & CO Mappings ({activeExamType} Exam)</h3>
+            <h3 className="glass-card-title">Consolidated Questions & CO Mappings ({activeExamType} Exam - {activeModule ? activeModule.replace('_', ' ') : 'All Modules'})</h3>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
               {isEditing ? (
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -359,7 +372,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
                   </div>
                 </div>
               )}
-              <span className="badge badge-emerald">{questions.length} Base Questions</span>
+              <span className="badge badge-emerald">{filteredQuestions.length} Base Questions</span>
             </div>
           </div>
 
@@ -458,7 +471,7 @@ export default function QuestionPaperUpload({ activeSubject }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {questions.map((q) => (
+                  {filteredQuestions.map((q) => (
                     <tr key={q._id}>
                       <td style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>{q.questionNo}</td>
                       <td style={{ fontWeight: 'bold', color: 'var(--accent-blue-hover)', textAlign: 'center' }}>

@@ -9,7 +9,7 @@ import ollamaConfig from '../../config/ollama.js';
 
 const SYSTEM_PROMPT = `
 You are a Senior OBE Curriculum Auditor and Academic Mapping Expert.
-Your task is to map a given exam question to Course Outcomes (CO1 to CO6) based on the subject's syllabus for a T4 examination.
+Your task is to map a given exam question (which belongs to a specific Syllabus Module) to Course Outcomes (CO1 to CO6) based on the subject's syllabus for a T4 examination.
 
 ### T4 CO MAPPING RULES:
 1. **Correlation weightage levels**: You must ONLY use:
@@ -18,13 +18,14 @@ Your task is to map a given exam question to Course Outcomes (CO1 to CO6) based 
 2. **Never assign 1**: Do NOT map any CO with weightage 1.
 3. **No Match**: If a CO is not related to the question, do NOT map it (do not include it in the mapped list).
 4. **Maximum 2 COs**: A single question can map to a MAXIMUM of 2 COs.
-5. **No random COs**: Never assign random COs. Prefer direct module-to-CO relationships.
-6. **Real-world validation**: Before assigning a CO, ensure:
-   - The syllabus directly supports this mapping.
-   - A faculty member would naturally map this question to this CO.
-   - The mapping can be justified during an NBA review.
-   - The relationship is direct.
-   If any of these criteria are not met, do not assign that CO.
+5. **No random COs**: Never assign random COs.
+
+### MODULE BOUNDARY VALIDATION RULES:
+1. **Module Context**: You are given the Module of the question (MODULE_1 or MODULE_2).
+2. **Dynamic CO-Module Association**: Analyze the syllabus units/topics and CO descriptions to identify which COs align with Module 1 vs Module 2.
+3. **Prefer Same-Module Mapping**: Prioritize mapping the question to COs that correspond to the question's module.
+4. **Cross-Module Mapping Restrictions**: You may only map to a CO belonging to a different module if there is strong, direct syllabus evidence of cross-topic relevance. If no such evidence exists, map strictly within the module's boundary.
+5. **Accreditation-Ready Justification**: Provide a short, academic justification explaining how the syllabus directly supports this mapping and why it is justifiable for NBA review, incorporating the module boundaries.
 
 ### OUTPUT FORMAT:
 Return ONLY a valid JSON object matching the schema. Do not write introductory or concluding text, explanations, or notes outside the JSON.
@@ -44,7 +45,7 @@ Return ONLY a valid JSON object matching the schema. Do not write introductory o
 /**
  * Maps a single T4 question to Course Outcomes.
  * 
- * @param {Object} question - The question object (containing questionNo, questionText, marks).
+ * @param {Object} question - The question object (containing questionNo, questionText, marks, module).
  * @param {Object} coRecord - The CourseOutcome record (containing CO1 to CO6).
  * @param {Array} unitsAndTopics - Syllabus units and topics.
  * @returns {Promise<Object>} - Object with { questionNo, mappedCOs, justification }
@@ -73,6 +74,7 @@ CO6: ${coRecord.CO6}
 
 Question to Map:
 Question Number: ${question.questionNo}
+Question Module: ${question.module || 'MODULE_1'}
 Question Text: "${question.questionText}"
 Marks: ${question.marks}
 `;
@@ -89,14 +91,17 @@ Marks: ${question.marks}
     });
 
     const responseText = response.data.response;
+    
+    // Sanitize any occasional typos like "weight,age" to "weightage"
+    const cleanedResponseText = responseText.replace(/"weight\s*,\s*age"/g, '"weightage"');
     let result;
 
     try {
-      result = JSON.parse(responseText);
+      result = JSON.parse(cleanedResponseText);
     } catch (parseError) {
-      console.error('[t4CoMapper] JSON parsing failed, attempting cleanup:', responseText);
+      console.error('[t4CoMapper] JSON parsing failed, attempting cleanup:', cleanedResponseText);
       const jsonRegex = /{[^]*}/;
-      const match = responseText.match(jsonRegex);
+      const match = cleanedResponseText.match(jsonRegex);
       if (match) {
         result = JSON.parse(match[0]);
       } else {

@@ -52,7 +52,7 @@ Each question may contain subparts (e.g. 1-a, 1-b, 1-c, 1-d or 2a, 2b, 2c, etc.)
 5. For each question, classify:
    - cognitiveLevel: Bloom's Taxonomy level ("Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create")
    - nature: nature of question ("Theory", "Numerical", "Programming", "Design", "Practical")
-   - module: One of "MODULE_1", "MODULE_2", "MODULE_3", "MODULE_4" based on the unit numbers from the syllabus corresponding to the question's content.
+   - module: One of "MODULE_1" or "MODULE_2" strictly, based on the unit numbers from the syllabus corresponding to the question's content.
 
 ### T5 CO MAPPING & CORRELATION RULES:
 1. Map each combined parent Question to Course Outcomes (CO1 to CO6).
@@ -63,11 +63,9 @@ Each question may contain subparts (e.g. 1-a, 1-b, 1-c, 1-d or 2a, 2b, 2c, etc.)
    - NEVER use weightage 1.
 3. Maximum of 2 COs per question. Never assign more than 2 COs.
 4. Prefer same-module mappings:
-   - Module 1 (MODULE_1) Questions -> CO1
-   - Module 2 (MODULE_2) Questions -> CO2, CO3
-   - Module 3 (MODULE_3) Questions -> CO4, CO5
-   - Module 4 (MODULE_4) Questions -> CO6
-   Cross-module mappings require strong direct evidence. If no direct relationship exists, do not map.
+   - Analyze the syllabus units/topics and CO descriptions to dynamically map Course Outcomes (CO1 to CO6) to either MODULE_1 or MODULE_2.
+   - Prioritize mapping each question to the Course Outcome(s) associated with its classified module (MODULE_1 or MODULE_2).
+   - Cross-module mappings require strong direct evidence. If no direct relationship exists, do not map.
 5. Provide a short, academic justification. Crucially, the justification MUST be a simple plain text string. Do NOT write double quotes, curly braces {}, square brackets [], or JSON tags/syntax inside the justification string.
 
 ### OUTPUT FORMAT:
@@ -77,7 +75,7 @@ Return ONLY a valid JSON object matching the schema below. Do not include format
 {
   "groups": [
     {
-      "module": "MODULE_1 | MODULE_2 | MODULE_3 | MODULE_4",
+      "module": "MODULE_1 | MODULE_2",
       "toolType": "T5",
       "questions": [
         {
@@ -126,14 +124,17 @@ ${rawPaperText}
 
     const responseText = response.data.response;
     console.log('[t5QuestionExtractor] Ollama raw response:', responseText);
+    
+    // Sanitize any occasional typos like "weight,age" to "weightage"
+    const cleanedResponseText = responseText.replace(/"weight\s*,\s*age"/g, '"weightage"');
     let result;
 
     try {
-      result = JSON.parse(responseText);
+      result = JSON.parse(cleanedResponseText);
     } catch (parseError) {
-      console.error('[t5QuestionExtractor] JSON parsing failed, attempting cleanup:', responseText);
+      console.error('[t5QuestionExtractor] JSON parsing failed, attempting cleanup:', cleanedResponseText);
       const jsonRegex = /(\[[^]*\]|{[^]*})/;
-      const match = responseText.match(jsonRegex);
+      const match = cleanedResponseText.match(jsonRegex);
       if (match) {
         result = JSON.parse(match[0]);
       } else {

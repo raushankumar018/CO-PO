@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import SyllabusUpload from './components/SyllabusUpload';
 import COManager from './components/COManager';
 import QuestionPaperUpload from './components/QuestionPaperUpload';
@@ -8,7 +8,22 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('syllabus');
   const [activeSubject, setActiveSubject] = useState(null);
 
+  useEffect(() => {
+    if (activeSubject && activeSubject.unitsAndTopics && activeSubject.unitsAndTopics.length > 0) {
+      if (activeTab === 'questions') {
+        setActiveTab('MODULE_1');
+      }
+    } else {
+      if (activeTab.startsWith('MODULE_')) {
+        setActiveTab('syllabus');
+      }
+    }
+  }, [activeSubject, activeTab]);
+
   const renderTabContent = () => {
+    if (activeTab.startsWith('MODULE_')) {
+      return <QuestionPaperUpload activeSubject={activeSubject} activeModule={activeTab} />;
+    }
     switch (activeTab) {
       case 'syllabus':
         return <SyllabusUpload activeSubject={activeSubject} setActiveSubject={setActiveSubject} />;
@@ -43,12 +58,28 @@ export default function App() {
           >
             🎯 Course Outcomes (CO)
           </button>
-          <button 
-            className={`tab-btn ${activeTab === 'questions' ? 'active' : ''}`} 
-            onClick={() => setActiveTab('questions')}
-          >
-            📝 T1 Exam Mapping
-          </button>
+          {activeSubject && activeSubject.unitsAndTopics && activeSubject.unitsAndTopics.length > 0 ? (
+            activeSubject.unitsAndTopics.slice(0, 2).map((unit, index) => {
+              const moduleKey = `MODULE_${index + 1}`;
+              const moduleLabel = `Module ${index + 1}`;
+              return (
+                <button 
+                  key={moduleKey}
+                  className={`tab-btn ${activeTab === moduleKey ? 'active' : ''}`} 
+                  onClick={() => setActiveTab(moduleKey)}
+                >
+                  📝 {moduleLabel}
+                </button>
+              );
+            })
+          ) : (
+            <button 
+              className={`tab-btn ${activeTab === 'questions' ? 'active' : ''}`} 
+              onClick={() => setActiveTab('questions')}
+            >
+              📝 Exam Mapping
+            </button>
+          )}
           <button 
             className={`tab-btn ${activeTab === 'copo' ? 'active' : ''}`} 
             onClick={() => setActiveTab('copo')}

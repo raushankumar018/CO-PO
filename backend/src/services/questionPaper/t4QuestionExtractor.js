@@ -38,7 +38,7 @@ CO6: ${coRecord.CO6 || 'Not specified'}`
 
   const systemPrompt = `
 You are an expert university exam paper parsing engine and academic mapping expert.
-Your task is to scan the raw text of a T4 exam paper, extract all questions, classify their cognitive level and nature, and map each question to the subject's Course Outcomes (CO1 to CO6) based on the syllabus.
+Your task is to scan the raw text of a T4 exam paper, extract all questions, classify their cognitive level and nature, determine which syllabus module (MODULE_1 or MODULE_2) they belong to, and map each question to the subject's Course Outcomes (CO1 to CO6) based on the syllabus.
 
 T4 papers contain:
 - PART A: Multiple Choice Questions (MCQs) (usually Q1 to Q10, 1 mark each)
@@ -53,14 +53,17 @@ T4 papers contain:
    - cognitiveLevel: Bloom's Taxonomy level ("Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create")
    - nature: nature of question ("Theory", "Numerical", "Programming", "Design", "Practical")
 
-### CO MAPPING RULES:
-1. Map each question to Course Outcomes (CO1 to CO6) based on the question content and syllabus.
-2. Correlation weightage levels: ONLY use:
+### MODULE BOUNDARY VALIDATION RULES:
+1. **Module Classification**: Group the extracted questions under their corresponding module ("MODULE_1" or "MODULE_2" strictly) by matching their content against the units/topics in the syllabus.
+2. **Dynamic CO-Module Association**: Determine which Course Outcomes (CO1 to CO6) correspond to which syllabus module (Module 1 vs Module 2) dynamically by analyzing their descriptions and syllabus topics.
+3. **Prefer Same-Module Mapping**: Prioritize mapping each question to the Course Outcome(s) associated with its classified module.
+4. **Cross-Module Mapping Restrictions**: Map a question to a CO from a different module only when there is strong, direct syllabus evidence of cross-topic relevance. If no such evidence exists, map strictly within the module's boundary.
+5. **Correlation Weightage Levels**: ONLY use:
    - 3 (Strong Match): Directly evaluates the primary competency.
    - 2 (Moderate Match): Supporting outcome.
-3. Never use weightage 1 or 0. If a CO is not related, do not include it.
-4. Maximum of 2 COs per question.
-5. Provide a short, academic justification for the mapping. Crucially, the justification MUST be a simple plain text string. Do NOT write quotes, curly braces {}, square brackets [], or JSON tags/syntax inside the justification string.
+   - Never use weightage 1 or 0. If a CO is not related, do not include it.
+6. **Maximum 2 COs**: A single question can map to a MAXIMUM of 2 COs.
+7. **Justification**: Provide a short, academic justification for the mapping that explains how the question's module and content map to the chosen COs. Crucially, the justification MUST be a simple plain text string. Do NOT write quotes, curly braces {}, square brackets [], or JSON tags/syntax inside the justification string.
 
 ### OUTPUT FORMAT:
 Return ONLY a valid JSON object matching the schema below. Do not include formatting marks like \`\`\`json. The output MUST start with { and end with }. All string values must be cleanly closed and escaped.
@@ -118,14 +121,17 @@ ${rawPaperText}
 
     const responseText = response.data.response;
     console.log('[t4QuestionExtractor] Ollama raw response:', responseText);
+    
+    // Sanitize any occasional typos like "weight,age" to "weightage"
+    const cleanedResponseText = responseText.replace(/"weight\s*,\s*age"/g, '"weightage"');
     let result;
 
     try {
-      result = JSON.parse(responseText);
+      result = JSON.parse(cleanedResponseText);
     } catch (parseError) {
-      console.error('[t4QuestionExtractor] JSON parsing failed, attempting cleanup:', responseText);
+      console.error('[t4QuestionExtractor] JSON parsing failed, attempting cleanup:', cleanedResponseText);
       const jsonRegex = /(\[[^]*\]|{[^]*})/;
-      const match = responseText.match(jsonRegex);
+      const match = cleanedResponseText.match(jsonRegex);
       if (match) {
         result = JSON.parse(match[0]);
       } else {
