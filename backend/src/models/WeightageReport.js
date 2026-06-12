@@ -21,7 +21,7 @@ const WeightageReportSchema = new mongoose.Schema(
     },
     toolType: {
       type: String,
-      enum: ['T1', 'T2', 'T3', 'T4', 'T5', 'SUMMATIVE_LAB'],
+      enum: ['T1', 'T2', 'T3', 'T4', 'T5', 'SUMMATIVE_LAB', 'SUMMATIVE_EXAM'],
       required: [true, 'Assessment tool type is required.']
     },
     // Compiled matrix containing question numbers and values for CO1-CO6 (including 0s)
@@ -50,7 +50,7 @@ const WeightageReportSchema = new mongoose.Schema(
     },
     examType: {
       type: String,
-      enum: ['T1', 'T4', 'T5', 'SUMMATIVE_LAB'],
+      enum: ['T1', 'T4', 'T5', 'SUMMATIVE_LAB', 'SUMMATIVE_EXAM'],
       required: [true, 'Exam type is required.'],
       default: 'T1'
     },

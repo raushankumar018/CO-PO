@@ -32,6 +32,10 @@ import { compileT5WeightageMatrix } from '../services/questionPaper/t5WeightageG
 import { extractQuestionsFromLabPaper } from '../services/questionPaper/labQuestionExtractor.js';
 import { compileLabWeightageMatrix } from '../services/questionPaper/labWeightageGenerator.js';
 
+// Summative Exam services
+import { extractQuestionsFromTextSummativeExam } from '../services/questionPaper/summativeExamExtractor.js';
+import { compileSummativeExamWeightageMatrix } from '../services/questionPaper/summativeExamWeightageGenerator.js';
+
 /**
  * Helper to extract base question number (e.g. "1" from "1a", "Q1(b)", "1.1").
  */
@@ -54,8 +58,8 @@ export const uploadQuestionPaper = async (req, res, next) => {
     }
 
     const examType = req.body.examType || req.query.examType || req.headers['exam-type'] || req.headers['examtype'] || 'T1';
-    if (!['T1', 'T4', 'T5', 'SUMMATIVE_LAB'].includes(examType)) {
-      return sendError(res, 'Invalid exam type. Must be T1, T4, T5, or SUMMATIVE_LAB.', 400);
+    if (!['T1', 'T4', 'T5', 'SUMMATIVE_LAB', 'SUMMATIVE_EXAM'].includes(examType)) {
+      return sendError(res, 'Invalid exam type. Must be T1, T4, T5, SUMMATIVE_LAB, or SUMMATIVE_EXAM.', 400);
     }
 
     const moduleParam = req.body.module || req.query.module || req.headers['module'] || 'MODULE_1';
@@ -92,6 +96,14 @@ export const uploadQuestionPaper = async (req, res, next) => {
     // ══════════════════════════════════════════════════════════════════════
     if (examType === 'SUMMATIVE_LAB') {
       return await handleLabUpload({
+        req, res, next,
+        subjectId, subject, coRecord,
+        paperPath, cleanedText
+      });
+    }
+
+    if (examType === 'SUMMATIVE_EXAM') {
+      return await handleSummativeExamUpload({
         req, res, next,
         subjectId, subject, coRecord,
         paperPath, cleanedText
@@ -646,6 +658,133 @@ const handleLabUpload = async ({ req, res, next, subjectId, subject, coRecord, p
 // ══════════════════════════════════════════════════════════════════════════════
 
 /**
+ * Handles Summative Examination paper upload:
+ * - Dynamically detects and aggregates all subparts under exactly 6 parent questions (Q1-Q6)
+ * - Stores one Question + one QuestionMapping per parent question
+ * - Stores one WeightageReport for the paper
+ */
+const handleSummativeExamUpload = async ({ req, res, next, subjectId, subject, coRecord, paperPath, cleanedText }) => {
+  try {
+    console.log('[questionPaperController] Starting SUMMATIVE_EXAM extraction...');
+    const extractedQuestions = await extractQuestionsFromTextSummativeExam(cleanedText, coRecord, subject.unitsAndTopics);
+
+    if (!Array.isArray(extractedQuestions)) {
+      return sendError(res, 'Extraction failed: Extracted questions must be an array.', 400);
+    }
+
+    // Enforce validation:
+    // Expected parent questions: Q1, Q2, Q3, Q4, Q5, Q6. Expected count: 6.
+    // Reject extraction if parent questions are not detected, subparts are stored independently, or more than 6 parent questions are generated.
+    const validNos = new Set(['1', '2', '3', '4', '5', '6']);
+    const extractedNos = new Set(extractedQuestions.map(q => q.questionNo.toString().trim()));
+    const isExactlySixParentQuestions = extractedQuestions.length === 6 &&
+      [...validNos].every(no => extractedNos.has(no));
+
+    if (!isExactlySixParentQuestions) {
+      return sendError(res, `Extraction rejected: Summative Examination must produce exactly 6 parent questions (Q1–Q6) with combined subparts, but got ${extractedQuestions.length} questions.`, 400);
+    }
+
+    // Step 2: Save or overwrite the QuestionPaper record
+    let questionPaper = await QuestionPaper.findOne({ subjectId, examType: 'SUMMATIVE_EXAM' });
+    if (questionPaper) {
+      questionPaper.paperPath = paperPath;
+      await questionPaper.save();
+    } else {
+      questionPaper = new QuestionPaper({
+        subjectId,
+        examType: 'SUMMATIVE_EXAM',
+        module: 'MODULE_1', // Default required value; scoping done via examType
+        paperPath
+      });
+      await questionPaper.save();
+    }
+
+    // Step 3: Clear all previous exam questions, mappings, and reports for this paper
+    await Question.deleteMany({ questionPaperId: questionPaper._id, examType: 'SUMMATIVE_EXAM' });
+    await QuestionMapping.deleteMany({ questionPaperId: questionPaper._id, examType: 'SUMMATIVE_EXAM' });
+    await WeightageReport.deleteMany({ questionPaperId: questionPaper._id, examType: 'SUMMATIVE_EXAM' });
+
+    const savedQuestions = [];
+    const savedMappings = [];
+
+    // Step 4: Save each question and mapping
+    for (const qItem of extractedQuestions) {
+      const questionNo = qItem.questionNo.toString().trim();
+      const questionText = qItem.questionText || qItem.text || qItem.question || 'No question text provided.';
+      const cognitiveLevel = qItem.cognitiveLevel || 'Understand';
+      const nature = qItem.nature || 'Theory';
+      const marks = Number(qItem.marks) || 0;
+
+      // Save Question document
+      const questionDoc = await Question.create({
+        questionPaperId: questionPaper._id,
+        subjectId,
+        module: null,          // Not applicable for summative exam
+        toolType: 'SUMMATIVE_EXAM',
+        examType: 'SUMMATIVE_EXAM',
+        questionNo,
+        questionText,
+        marks,
+        cognitiveLevel,
+        nature
+      });
+      savedQuestions.push(questionDoc);
+
+      // Filter and enforce CO mapping rules (weightage 2 or 3 only, max 2 COs)
+      let mappedCOs = (qItem.mappedCOs || [])
+        .filter((m) => ['CO1', 'CO2', 'CO3', 'CO4', 'CO5', 'CO6'].includes(m.coCode) && [2, 3].includes(Number(m.weightage)))
+        .map((m) => ({ coCode: m.coCode, weightage: Number(m.weightage) }));
+
+      if (mappedCOs.length > 2) mappedCOs = mappedCOs.slice(0, 2);
+      if (mappedCOs.length === 0) mappedCOs.push({ coCode: 'CO1', weightage: 2 });
+
+      const justification = qItem.justification || 'Aligned with syllabus outcomes.';
+
+      // Save QuestionMapping document
+      const mappingDoc = await QuestionMapping.create({
+        questionId: questionDoc._id,
+        questionPaperId: questionPaper._id,
+        questionNo,
+        examType: 'SUMMATIVE_EXAM',
+        module: null,          // Not applicable for summative exam
+        mappedCOs,
+        justification
+      });
+      savedMappings.push(mappingDoc);
+    }
+
+    // Sort questions numerically
+    savedQuestions.sort((a, b) => a.questionNo.localeCompare(b.questionNo, undefined, { numeric: true, sensitivity: 'base' }));
+
+    // Step 5: Compile weightage matrix report
+    const compiled = compileSummativeExamWeightageMatrix(savedQuestions, savedMappings);
+
+    // Save WeightageReport document
+    const reportDoc = await WeightageReport.create({
+      subjectId,
+      questionPaperId: questionPaper._id,
+      toolType: 'SUMMATIVE_EXAM',
+      examType: 'SUMMATIVE_EXAM',
+      module: null,
+      matrix: compiled.matrix,
+      coTotals: compiled.coTotals
+    });
+
+    return sendSuccess(res, 'Summative Examination Mapping: Uploaded, Consolidated (Q1-Q6), and mapped successfully.', {
+      questionPaper,
+      questionsCount: savedQuestions.length,
+      mappingsCount: savedMappings.length,
+      report: reportDoc
+    }, 201);
+  } catch (error) {
+    console.error('[questionPaperController] Error uploading Summative Exam paper:', error);
+    next(error);
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
  * Retrieves the question paper data associated with a Subject, isolated by module.
  * For SUMMATIVE_LAB: returns set-grouped questions and per-set + combined reports.
  */
@@ -708,6 +847,40 @@ export const getQuestionPaperBySubject = async (req, res, next) => {
         mappings,
         setReports,
         combinedReport
+      });
+    }
+
+    // ── SUMMATIVE_EXAM fetch path ─────────────────────────────────────────────
+    if (examType === 'SUMMATIVE_EXAM') {
+      const paper = await QuestionPaper.findOne({ subjectId, examType: 'SUMMATIVE_EXAM' });
+
+      if (!paper) {
+        return sendError(res, 'Summative Examination Mapping not found for this subject.', 404);
+      }
+
+      const questions = await Question.find({ questionPaperId: paper._id, examType: 'SUMMATIVE_EXAM' });
+      questions.sort((a, b) => a.questionNo.localeCompare(b.questionNo, undefined, { numeric: true, sensitivity: 'base' }));
+
+      const mappings = await QuestionMapping.find({ questionPaperId: paper._id, examType: 'SUMMATIVE_EXAM' });
+      const report = await WeightageReport.findOne({ questionPaperId: paper._id, examType: 'SUMMATIVE_EXAM' });
+
+      // Merge mappings details directly into questions array elements to replicate T1/T4/T5 formats
+      const mergedQuestions = questions.map((q) => {
+        const mapping = mappings.find(
+          (m) => m.questionNo.toString().trim() === q.questionNo.toString().trim()
+        );
+        return {
+          ...q.toObject(),
+          mappedCOs: mapping ? mapping.mappedCOs : [],
+          justification: mapping ? mapping.justification : 'No mapping recorded.',
+        };
+      });
+
+      return sendSuccess(res, 'Summative Examination Mapping retrieved successfully.', {
+        paper,
+        questions: mergedQuestions,
+        mappings,
+        report
       });
     }
 
@@ -843,6 +1016,75 @@ export const updateQuestionMappings = async (req, res, next) => {
         questions: finalQuestions,
         setReports: updatedSetReports,
         combinedReport: combinedReportDoc
+      });
+    }
+
+    // ── SUMMATIVE_EXAM update path ───────────────────────────────────────────
+    if (examType === 'SUMMATIVE_EXAM') {
+      for (const item of mappings) {
+        const { questionNo, mappedCOs, justification } = item;
+
+        const qDoc = await Question.findOne({ questionPaperId, questionNo, examType: 'SUMMATIVE_EXAM' });
+        if (!qDoc) {
+          console.warn(`[updateQuestionMappings] Exam question Q${questionNo} not found.`);
+          continue;
+        }
+
+        const filteredCOs = (mappedCOs || [])
+          .filter((m) => ['CO1', 'CO2', 'CO3', 'CO4', 'CO5', 'CO6'].includes(m.coCode) && [2, 3].includes(Number(m.weightage)))
+          .map((m) => ({ coCode: m.coCode, weightage: Number(m.weightage) }));
+
+        await QuestionMapping.findOneAndUpdate(
+          { questionPaperId, examType: 'SUMMATIVE_EXAM', questionNo },
+          {
+            questionId: qDoc._id,
+            questionPaperId,
+            questionNo,
+            examType: 'SUMMATIVE_EXAM',
+            module: null,
+            mappedCOs: filteredCOs,
+            justification: justification || 'Manually updated exam mapping.'
+          },
+          { upsert: true, new: true }
+        );
+      }
+
+      // Recompile report
+      const allQuestions = await Question.find({ questionPaperId, examType: 'SUMMATIVE_EXAM' });
+      allQuestions.sort((a, b) => a.questionNo.localeCompare(b.questionNo, undefined, { numeric: true, sensitivity: 'base' }));
+
+      const allMappings = await QuestionMapping.find({ questionPaperId, examType: 'SUMMATIVE_EXAM' });
+      const compiled = compileSummativeExamWeightageMatrix(allQuestions, allMappings);
+
+      const reportDoc = await WeightageReport.findOneAndUpdate(
+        { questionPaperId, examType: 'SUMMATIVE_EXAM' },
+        {
+          subjectId,
+          questionPaperId,
+          toolType: 'SUMMATIVE_EXAM',
+          examType: 'SUMMATIVE_EXAM',
+          module: null,
+          matrix: compiled.matrix,
+          coTotals: compiled.coTotals
+        },
+        { upsert: true, new: true }
+      );
+
+      // Merge and return
+      const finalQuestions = allQuestions.map(q => {
+        const mapping = allMappings.find(
+          m => m.questionNo.toString().trim() === q.questionNo.toString().trim()
+        );
+        return {
+          ...q.toObject(),
+          mappedCOs: mapping ? mapping.mappedCOs : [],
+          justification: mapping ? mapping.justification : 'No mapping recorded.'
+        };
+      });
+
+      return sendSuccess(res, 'Summative Examination mappings and weightage matrix updated successfully.', {
+        questions: finalQuestions,
+        report: reportDoc
       });
     }
 

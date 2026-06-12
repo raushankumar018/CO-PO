@@ -27,12 +27,12 @@ const QuestionSchema = new mongoose.Schema(
     },
     toolType: {
       type: String,
-      enum: ['T1', 'T2', 'T3', 'T4', 'T5', 'SUMMATIVE_LAB'],
-      required: [true, 'Question assessment tool type (e.g. T1, T4, SUMMATIVE_LAB) is required.']
+      enum: ['T1', 'T2', 'T3', 'T4', 'T5', 'SUMMATIVE_LAB', 'SUMMATIVE_EXAM'],
+      required: [true, 'Question assessment tool type (e.g. T1, T4, SUMMATIVE_LAB, SUMMATIVE_EXAM) is required.']
     },
     examType: {
       type: String,
-      enum: ['T1', 'T4', 'T5', 'SUMMATIVE_LAB'],
+      enum: ['T1', 'T4', 'T5', 'SUMMATIVE_LAB', 'SUMMATIVE_EXAM'],
       required: [true, 'Exam type is required.'],
       default: 'T1'
     },

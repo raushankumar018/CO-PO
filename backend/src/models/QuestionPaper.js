@@ -16,7 +16,7 @@ const QuestionPaperSchema = new mongoose.Schema(
     },
     examType: {
       type: String,
-      enum: ['T1', 'T4', 'T5', 'SUMMATIVE_LAB'],
+      enum: ['T1', 'T4', 'T5', 'SUMMATIVE_LAB', 'SUMMATIVE_EXAM'],
       required: [true, 'Exam type is required.'],
       default: 'T1'
     },

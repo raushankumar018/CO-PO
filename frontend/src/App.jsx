@@ -11,11 +11,12 @@ export default function App() {
   // Determine what the top-level tab represents
   const isModuleTab = activeTab.startsWith('MODULE_');
   const isLabTab = activeTab === 'SUMMATIVE_LAB';
+  const isExamTab = activeTab === 'SUMMATIVE_EXAM';
 
-  // Guard: if subject is removed, reset module/lab tabs back to syllabus
+  // Guard: if subject is removed, reset module/lab/exam tabs back to syllabus
   useEffect(() => {
     const hasUnits = activeSubject && activeSubject.unitsAndTopics && activeSubject.unitsAndTopics.length > 0;
-    if (!hasUnits && (isModuleTab || isLabTab)) {
+    if (!hasUnits && (isModuleTab || isLabTab || isExamTab)) {
       setActiveTab('syllabus');
     }
   }, [activeSubject]);
@@ -28,6 +29,17 @@ export default function App() {
           activeSubject={activeSubject}
           activeModule={null}
           lockedExamType="SUMMATIVE_LAB"
+        />
+      );
+    }
+
+    // ── Summative Exam tab → subject-wide, no module context ─────────────────
+    if (isExamTab) {
+      return (
+        <QuestionPaperUpload
+          activeSubject={activeSubject}
+          activeModule={null}
+          lockedExamType="SUMMATIVE_EXAM"
         />
       );
     }
@@ -108,6 +120,16 @@ export default function App() {
               onClick={() => setActiveTab('SUMMATIVE_LAB')}
             >
               🔬 Summative Lab
+            </button>
+          )}
+
+          {/* ── Summative Exam — subject-level, never under a module ── */}
+          {hasUnits && (
+            <button
+              className={`tab-btn ${isExamTab ? 'active' : ''}`}
+              onClick={() => setActiveTab('SUMMATIVE_EXAM')}
+            >
+              📝 Summative Exam
             </button>
           )}
 

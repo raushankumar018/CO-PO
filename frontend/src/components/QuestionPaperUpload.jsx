@@ -593,6 +593,8 @@ export default function QuestionPaperUpload({ activeSubject, activeModule, locke
   const [labCombinedReport, setLabCombinedReport] = useState(null); // combined report
 
   const isLab = activeExamType === 'SUMMATIVE_LAB';
+  const isExam = activeExamType === 'SUMMATIVE_EXAM';
+  const isSubjectLevel = isLab || isExam;
   // Whether to show the internal exam-type selector card.
   // Hidden when App.jsx already chose the type via lockedExamType.
   const showExamTypeSelector = !lockedExamType;
@@ -612,8 +614,8 @@ export default function QuestionPaperUpload({ activeSubject, activeModule, locke
     const mod = activeModule || 'MODULE_1';
 
     try {
-      const url = isLab
-        ? `/api/v1/question-papers/${activeSubject._id}?examType=SUMMATIVE_LAB`
+      const url = isSubjectLevel
+        ? `/api/v1/question-papers/${activeSubject._id}?examType=${activeExamType}`
         : `/api/v1/question-papers/${activeSubject._id}?examType=${activeExamType}&module=${mod}`;
 
       const res = await fetch(url);
@@ -677,12 +679,12 @@ export default function QuestionPaperUpload({ activeSubject, activeModule, locke
     formData.append('questionPaper', file);
     formData.append('subjectId', activeSubject._id);
     formData.append('examType', activeExamType);
-    if (!isLab) formData.append('module', mod);
+    if (!isSubjectLevel) formData.append('module', mod);
 
     try {
       const res = await fetch('/api/v1/question-papers/upload', {
         method: 'POST',
-        headers: isLab
+        headers: isSubjectLevel
           ? { 'subject-id': activeSubject._id, 'exam-type': activeExamType }
           : { 'subject-id': activeSubject._id, 'exam-type': activeExamType, 'module': mod },
         body: formData,
@@ -692,7 +694,9 @@ export default function QuestionPaperUpload({ activeSubject, activeModule, locke
       if (json.success) {
         const msg = isLab
           ? `Summative Lab: ${json.data.setsDetected} set(s) detected, ${json.data.questionsCount} question(s) extracted and mapped!`
-          : `${activeExamType} Exam (${mod}): Uploaded, consolidated, and mapped successfully!`;
+          : isExam
+            ? `Summative Exam: Q1-Q6 parent questions consolidated, marks summed, and mapped successfully!`
+            : `${activeExamType} Exam (${mod}): Uploaded, consolidated, and mapped successfully!`;
         setSuccess(msg);
         fetchPaper();
       } else {
@@ -926,10 +930,10 @@ export default function QuestionPaperUpload({ activeSubject, activeModule, locke
       <div className="glass-card">
         <div className="glass-card-header">
           <h3 className="glass-card-title">
-            {isLab ? 'Summative Lab Mapping Engine' : `${activeExamType} Exam Mapping Engine`}
+            {isLab ? 'Summative Lab Mapping Engine' : isExam ? 'Summative Exam Mapping Engine' : `${activeExamType} Exam Mapping Engine`}
           </h3>
           <span className="badge badge-blue">
-            Upload {isLab ? 'Lab' : activeExamType} PDF
+            Upload {isLab ? 'Lab' : isExam ? 'Summative Exam' : activeExamType} PDF
           </span>
         </div>
 
@@ -951,13 +955,14 @@ export default function QuestionPaperUpload({ activeSubject, activeModule, locke
           />
           <div className="upload-icon">{isLab ? '🔬' : '📝'}</div>
           <p className="upload-text">
-            Drag & drop {isLab ? 'Summative Lab' : `${activeExamType} Exam`} PDF, or click to browse
+            Drag & drop {isLab ? 'Summative Lab' : isExam ? 'Summative Exam' : `${activeExamType} Exam`} PDF, or click to browse
           </p>
           <span className="upload-hint">
             {activeExamType === 'T1' && 'Sub-questions (e.g. 1a, 1b) will be grouped, marks summed, and mapped automatically'}
             {activeExamType === 'T4' && 'Each question (including MCQs) will be parsed and mapped independently without aggregation'}
             {activeExamType === 'T5' && 'Subparts (e.g. 1-a, 1-b) will be combined under parent Questions (1–4), marks aggregated to 20, and mapped'}
             {isLab && 'All Sets are detected dynamically. A+B sub-parts are combined into parent questions. Each set is mapped independently and a combined report is generated.'}
+            {isExam && 'All subparts (a, b, c, d) are consolidated under exactly 6 parent questions (Q1–Q6) across SECTION A and SECTION B, and mapped.'}
           </span>
         </div>
 
@@ -967,7 +972,9 @@ export default function QuestionPaperUpload({ activeSubject, activeModule, locke
             <p style={{ color: 'var(--text-secondary)' }}>
               {isLab
                 ? 'Detecting sets, aggregating A+B questions, and mapping COs via local Qwen LLM...'
-                : `Processing ${activeExamType} Exam Mapping data...`}
+                : isExam
+                  ? 'Consolidating Q1-Q6 parent questions, summing marks, and mapping COs via local LLM...'
+                  : `Processing ${activeExamType} Exam Mapping data...`}
             </p>
           </div>
         )}
@@ -1044,7 +1051,7 @@ export default function QuestionPaperUpload({ activeSubject, activeModule, locke
         <div className="glass-card">
           <div className="glass-card-header">
             <h3 className="glass-card-title">
-              Consolidated Questions & CO Mappings ({activeExamType} Exam - {activeModule ? activeModule.replace('_', ' ') : 'All Modules'})
+              Consolidated Questions & CO Mappings ({activeExamType === 'SUMMATIVE_EXAM' ? 'Summative Exam' : activeExamType + ' Exam'} - {activeModule ? activeModule.replace('_', ' ') : 'All Modules'})
             </h3>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
               {isEditing ? (
@@ -1099,7 +1106,7 @@ export default function QuestionPaperUpload({ activeSubject, activeModule, locke
                 <thead>
                   <tr>
                     <th style={{ width: '60px', backgroundColor: 'var(--bg-tertiary)' }}></th>
-                    <th>questionNo</th>
+                    <th>{activeExamType === 'SUMMATIVE_EXAM' ? 'Question' : 'questionNo'}</th>
                     <th>marks</th>
                     <th style={{ textAlign: 'center' }}>CO1</th>
                     <th style={{ textAlign: 'center' }}>CO2</th>
@@ -1115,7 +1122,9 @@ export default function QuestionPaperUpload({ activeSubject, activeModule, locke
                       <td style={{ color: 'var(--text-muted)', fontSize: '12px', width: '60px', backgroundColor: 'var(--bg-tertiary)', fontWeight: 'bold' }}>
                         {index}
                       </td>
-                      <td style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>{row.questionNo}</td>
+                      <td style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>
+                        {activeExamType === 'SUMMATIVE_EXAM' ? `Q${row.questionNo}` : row.questionNo}
+                      </td>
                       <td style={{ fontWeight: 'bold', color: 'var(--accent-blue-hover)' }}>{row.marks}</td>
                       {['CO1', 'CO2', 'CO3', 'CO4', 'CO5', 'CO6'].map((coKey) => {
                         const val = row[coKey] || 0;
@@ -1171,7 +1180,9 @@ export default function QuestionPaperUpload({ activeSubject, activeModule, locke
                   <tbody>
                     {filteredQuestions.map((q) => (
                       <tr key={q._id}>
-                        <td style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>{q.questionNo}</td>
+                        <td style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>
+                          {activeExamType === 'SUMMATIVE_EXAM' ? `Q${q.questionNo}` : q.questionNo}
+                        </td>
                         <td style={{ fontWeight: 'bold', color: 'var(--accent-blue-hover)', textAlign: 'center' }}>{q.marks}</td>
                         <td>
                           <span className={`badge ${getCognitiveBadgeColor(q.cognitiveLevel)}`}>{q.cognitiveLevel}</span>
