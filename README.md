@@ -1,48 +1,22 @@
-# CO-PO: Outcome Based Education Automation System
+# CO-PO Analytica
 
-An AI-assisted Outcome Based Education (OBE) platform for syllabus ingestion, Course Outcome generation, exam paper analysis, CO mapping, and CO-PO matrix reporting.
+CO-PO Analytica is an Outcome Based Education (OBE) automation system for syllabus ingestion, Course Outcome generation, exam-paper analysis, question-to-CO mapping, and CO-PO matrix reporting.
 
-The repository contains:
+The project is split into two apps:
 
-- `frontend/`: React + Vite interface for uploading syllabi, managing COs, processing question papers, and viewing CO-PO matrices.
-- `backend/`: Node.js + Express API that parses PDFs, calls local Ollama/Qwen models, stores data in MongoDB, and generates mapping reports.
-
----
+- `backend/` - Node.js, Express, MongoDB, and Ollama/Qwen API for PDF processing, LLM-assisted extraction, CO generation, mappings, and reports.
+- `frontend/` - React and Vite workspace for uploading syllabi, managing COs, processing assessment PDFs, editing mappings, and reviewing CO-PO matrices.
 
 ## Features
 
-### Frontend
-
-- Syllabus upload workspace for creating or selecting a course.
-- Course Outcome manager for generating, reviewing, and editing CO1-CO6.
-- Question paper upload workflow for processing exam PDFs against a selected subject.
-- CO-PO matrix view for reviewing outcome mappings and weightage reports.
-- Built with React 19 and Vite.
-
-### Backend
-
-- Syllabus PDF upload and resilient text extraction.
-- AI-powered subject metadata extraction, unit/topic parsing, and CO generation.
-- Bloom's Taxonomy validation and refinement support.
-- Question paper PDF extraction with sub-question aggregation.
-- Bloom level and question nature classification.
-- Question-to-CO mapping using weighted correlations of `2` and `3`.
-- CO-PO matrix generation and printable report output.
-- MongoDB persistence through Mongoose models.
-
----
-
-## System Workflow
-
-1. Upload a syllabus PDF from the frontend.
-2. The backend extracts text, cleans it, and asks Ollama/Qwen to identify subject metadata, units, and topics.
-3. Generate CO1-CO6 for the selected subject.
-4. Review or edit generated COs.
-5. Upload an exam question paper for that subject.
-6. The backend extracts questions, aggregates sub-questions, classifies Bloom levels, and maps questions to COs.
-7. Review CO weightage and CO-PO matrix reports in the frontend.
-
----
+- Upload syllabus PDFs and extract subject metadata, units, and topics.
+- Generate CO1-CO6 using a local Ollama model.
+- Audit and manually edit Course Outcomes.
+- Upload and process assessment PDFs for T1, T4, T5, Summative Lab, and Summative Exam flows.
+- Classify questions by Bloom's level and question nature.
+- Map questions to COs with editable 0, 2, and 3 correlation values.
+- Generate CO weightage reports and CO-PO/PSO correlation matrices.
+- Persist courses, COs, questions, mappings, and reports in MongoDB.
 
 ## Project Structure
 
@@ -50,26 +24,21 @@ The repository contains:
 CO-PO/
 |-- backend/
 |   |-- src/
-|   |   |-- config/          # MongoDB and Ollama configuration
-|   |   |-- controllers/     # REST request handlers
-|   |   |-- middlewares/     # Upload and error middleware
-|   |   |-- models/          # Mongoose schemas
-|   |   |-- prompts/         # LLM prompt templates
-|   |   |-- routes/          # API route definitions
-|   |   |-- services/        # PDF, CO, question, and mapping services
-|   |   |-- utils/           # Response and report helpers
-|   |   `-- app.js           # Express app setup
-|   |-- uploads/             # Uploaded syllabus and question paper PDFs
+|   |   |-- config/
+|   |   |-- controllers/
+|   |   |-- middlewares/
+|   |   |-- models/
+|   |   |-- prompts/
+|   |   |-- routes/
+|   |   |-- services/
+|   |   `-- utils/
+|   |-- uploads/
 |   |-- package.json
 |   `-- server.js
 |-- frontend/
 |   |-- src/
 |   |   |-- assets/
 |   |   |-- components/
-|   |   |   |-- COManager.jsx
-|   |   |   |-- COPOMatrix.jsx
-|   |   |   |-- QuestionPaperUpload.jsx
-|   |   |   `-- SyllabusUpload.jsx
 |   |   |-- App.jsx
 |   |   |-- App.css
 |   |   |-- index.css
@@ -81,33 +50,52 @@ CO-PO/
 `-- frontend/README.md
 ```
 
----
-
 ## Prerequisites
 
-| Dependency | Version |
-| --- | --- |
-| Node.js | v18 or higher |
-| MongoDB | v6 or higher, running locally |
-| Ollama | Latest |
-| Qwen model | `qwen3:8b` |
-
-Install the local LLM model:
+- Node.js 18 or newer
+- MongoDB running locally
+- Ollama installed and running
+- Qwen model pulled locally:
 
 ```bash
 ollama pull qwen3:8b
 ```
 
----
+## Quick Start
 
-## Backend Setup
+Start the backend:
 
 ```bash
 cd backend
 npm install
+npm run dev
 ```
 
-Create or verify `backend/.env`:
+Start the frontend in another terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open the app at:
+
+```text
+http://localhost:3000
+```
+
+The backend runs at:
+
+```text
+http://localhost:5000
+```
+
+The frontend Vite server proxies `/api` and `/uploads` requests to the backend.
+
+## Backend Environment
+
+Create `backend/.env` if it does not already exist:
 
 ```env
 PORT=5000
@@ -117,127 +105,41 @@ OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen3:8b
 ```
 
-Start the backend:
+## Main Workflow
 
-```bash
-npm run dev
-```
+1. Upload or select a syllabus in the Syllabus Ingestion tab.
+2. Generate CO1-CO6 for the selected subject.
+3. Review, audit, edit, and save the generated COs.
+4. Upload assessment PDFs for module-level exams or subject-level summative flows.
+5. Review extracted questions, classifications, marks, and mapped COs.
+6. Edit mappings where needed and save updated weightage reports.
+7. Generate or edit the CO-PO matrix.
 
-The API runs at:
+## API Summary
 
-```text
-http://localhost:5000
-```
+- `GET /health`
+- `POST /api/v1/syllabus/upload`
+- `GET /api/v1/syllabus`
+- `GET /api/v1/syllabus/:id`
+- `POST /api/v1/co/generate`
+- `POST /api/v1/co/verify`
+- `GET /api/v1/co/:subjectId`
+- `PUT /api/v1/co/:id`
+- `POST /api/v1/question-papers/upload`
+- `GET /api/v1/question-papers/:subjectId`
+- `PUT /api/v1/question-papers/mappings/:questionPaperId`
+- `POST /api/v1/mappings/map`
+- `GET /api/v1/mappings/:subjectId`
+- `GET /api/v1/mappings/co-po/:subjectId`
+- `GET /api/v1/mappings/co-po/retrieve/:subjectId`
+- `PUT /api/v1/mappings/co-po/:subjectId`
 
-For production mode:
-
-```bash
-npm start
-```
-
----
-
-## Frontend Setup
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The Vite dev server usually runs at:
-
-```text
-http://localhost:5173
-```
-
-Other frontend commands:
-
-```bash
-npm run build
-npm run preview
-npm run lint
-```
-
----
-
-## API Endpoints
-
-### Health
-
-- `GET /health` - Check backend status.
-
-### Syllabus Processing
-
-- `POST /api/v1/syllabus/upload` - Upload syllabus PDF.
-  - Form-data field: `syllabus`
-- `GET /api/v1/syllabus` - Fetch all processed courses.
-- `GET /api/v1/syllabus/:id` - Fetch one processed syllabus by database ID.
-
-### Course Outcomes
-
-- `POST /api/v1/co/generate` - Generate CO1-CO6.
-  - Body: `{ "subjectId": "SUBJECT_ID" }`
-- `GET /api/v1/co/:subjectId` - Fetch COs for a subject.
-- `POST /api/v1/co/verify` - Validate and store edited COs.
-- `PUT /api/v1/co/:id` - Update COs by record ID.
-
-### Question Papers
-
-- `POST /api/v1/question-papers/upload` - Upload and process a question paper PDF.
-  - File field can be any key, such as `questionPaper` or `Question`.
-  - `subjectId` can be passed in form-data, query string, or headers as `subject-id` / `subjectid`.
-- `GET /api/v1/question-papers/:subjectId` - Fetch processed questions, mappings, and cached reports.
-
-### Outcome Mapping
-
-- `POST /api/v1/mappings/map` - Generate question-to-CO weightage table.
-  - Body: `{ "subjectId": "SUBJECT_ID" }`
-- `GET /api/v1/mappings/:subjectId` - Fetch CO mappings and weightage percentages.
-- `GET /api/v1/mappings/co-po/:subjectId` - Generate CO-PO correlation matrices.
-
----
-
-## Testing Question Paper Upload
-
-Using curl:
-
-```bash
-curl -X POST http://localhost:5000/api/v1/question-papers/upload \
-  -H "subject-id: YOUR_SUBJECT_ID" \
-  -F "questionPaper=@/path/to/your/exam.pdf"
-```
-
-Expected aggregation behavior:
-
-- `1a`, `1b`, and `1c` are stored under parent question `1`.
-- Marks are summed across sub-questions.
-- Mapped COs are merged into one parent question mapping.
-- Reports use natural numeric ordering such as `1, 2, 3, ..., 10, 11`.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-| --- | --- |
-| Frontend | React 19, Vite |
-| Backend Runtime | Node.js |
-| Backend Framework | Express.js |
-| Database | MongoDB, Mongoose |
-| LLM Engine | Ollama with `qwen3:8b` |
-| PDF Parsing | `pdf-parse`, custom extraction fallback |
-| API Format | REST |
-| Module System | ES Modules |
-
----
+See [backend/README.md](./backend/README.md) for detailed request fields and examples.
 
 ## Documentation
 
-- [Frontend README](./frontend/README.md) - Frontend-specific Vite notes.
-- [Backend README](./backend/README.md) - Backend architecture, API details, and testing notes.
-
----
+- [Backend README](./backend/README.md)
+- [Frontend README](./frontend/README.md)
 
 ## License
 
